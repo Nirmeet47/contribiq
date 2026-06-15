@@ -1,0 +1,19 @@
+// one row per skill per user — so if you know React + TS + Node that's 3 rows
+// confidence is calculated from how many repos and commits back up that skill
+
+model Skill {
+  id             String     @id @default(cuid())
+  skillProfileId String
+  name           String     // "React", "TypeScript", "Node.js", etc.
+  level          SkillLevel
+  confidence     Float      // 0.0 – 1.0
+  repoCount      Int        @default(0)
+  commitCount    Int        @default(0)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  skillProfile SkillProfile @relation(fields: [skillProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([skillProfileId, name]) // can't have React twice on the same profile
+  @@map("skills")
+}

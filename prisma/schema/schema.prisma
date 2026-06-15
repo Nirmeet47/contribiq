@@ -1,0 +1,41 @@
+// generator + datasource go here
+// connection URL is handled in prisma.config.ts (Prisma 7 moved it out of schema)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// skill level is set by the profiling agent based on commit volume + repo count
+enum SkillLevel {
+  strong
+  moderate
+  learning
+}
+
+enum IssueState {
+  open
+  closed
+}
+
+// difficulty is what claude decides after reading the issue body
+enum Difficulty {
+  beginner
+  intermediate
+  advanced
+}
+
+enum IssueType {
+  bug
+  feature
+  docs
+  refactor
+}
+
+// only one feedback type for now, might add "already done" etc later
+enum FeedbackType {
+  not_interested
+}

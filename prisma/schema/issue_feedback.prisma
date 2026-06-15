@@ -1,0 +1,16 @@
+// "not interested" signals — once a user dismisses an issue it never shows up again
+// we check this table as an exclusion filter when building the feed
+
+model IssueFeedback {
+  id        String       @id @default(cuid())
+  userId    String
+  issueId   String
+  type      FeedbackType @default(not_interested)
+  createdAt DateTime     @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, issueId])
+  @@map("issue_feedback")
+}

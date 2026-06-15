@@ -1,0 +1,31 @@
+// written immediately when github fires the webhook (processed=false)
+// the contribution agent picks it up from the queue, reads the diff,
+// and fills in the ai fields + flips processed=true
+
+model Contribution {
+  id        String   @id @default(cuid())
+  userId    String
+  repoOwner String
+  repoName  String
+  prNumber  Int
+  prTitle   String
+  prUrl     String
+  mergedAt  DateTime
+  processed Boolean  @default(false)
+
+  // filled in after the agent reads the PR diff
+  aiDescription      String?  @db.Text
+  skillsDemonstrated String[] // skills the agent picked up from the diff
+  complexity         Int?     // 1–5, rough gauge of how hard the PR was
+  linesAdded         Int?
+  linesRemoved       Int?
+  filesChanged       Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, repoOwner, repoName, prNumber])
+  @@map("contributions")
+}

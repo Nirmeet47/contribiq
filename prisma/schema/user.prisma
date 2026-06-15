@@ -1,0 +1,24 @@
+// created on first github oauth login, one row per dev
+
+model User {
+  id             String   @id @default(cuid())
+  githubId       Int      @unique
+  username       String   @unique
+  name           String?
+  avatarUrl      String?
+  githubToken    String?  // stored encrypted, used for github api calls on behalf of the user
+  interests      String[] // picked during onboarding e.g. ["frontend", "ai"]
+  timeCommitment Int      @default(0) // hours/week the dev said they can contribute
+  onboarded      Boolean  @default(false) // flips to true once they finish the onboarding wizard
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  skillProfile   SkillProfile?
+  issueMatches   IssueMatch[]
+  contributions  Contribution[]
+  bookmarks      Bookmark[]
+  feedback       IssueFeedback[]
+  skillSnapshots SkillSnapshot[]
+
+  @@map("users")
+}

@@ -1,0 +1,14 @@
+// taken weekly (and whenever a new skill is detected from a merged PR)
+// the full profile is stored as json so the timeline scrubber can
+// show exactly what your skills looked like at any given point
+
+model SkillSnapshot {
+  id       String   @id @default(cuid())
+  userId   String
+  snapshot Json
+  takenAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("skill_snapshots")
+}

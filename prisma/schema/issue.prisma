@@ -1,0 +1,32 @@
+// raw issue data lands here first with classified=false
+// claude comes along later and fills in the ai* fields, then flips classified=true
+
+model Issue {
+  id            String     @id @default(cuid())
+  githubId      Int
+  repoId        String
+  title         String
+  body          String?    @db.Text
+  state         IssueState @default(open)
+  assigneeCount Int        @default(0)
+  githubUrl     String
+  classified    Boolean    @default(false)
+
+  // filled in by the classification agent
+  aiSummary      String?    @db.Text
+  difficulty     Difficulty?
+  estimatedHours Float?
+  requiredSkills String[]   // e.g. ["React", "TypeScript", "DOM Events"]
+  issueType      IssueType?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  repo      Repo            @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  matches   IssueMatch[]
+  bookmarks Bookmark[]
+  feedback  IssueFeedback[]
+
+  @@unique([githubId, repoId])
+  @@map("issues")
+}
