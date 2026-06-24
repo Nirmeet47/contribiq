@@ -37,17 +37,18 @@ type EnvDefinition = {
 };
 
 const envDefinitions: EnvDefinition[] = [
+  // --- Supabase Postgres ---
   {
     name: "DATABASE_URL",
     label: "Runtime Postgres URL",
     category: "Supabase Postgres",
     required: true,
     source:
-      "Supabase Dashboard > Project Settings > Database > Connection string > Transaction pooler, port 6543",
+      "Supabase Dashboard > Settings > Database > Connection string > Transaction pooler, port 6543",
     validate: (value) =>
       value.startsWith("postgresql://") || value.startsWith("postgres://")
         ? null
-        : "Expected a postgres connection string.",
+        : "Expected a postgres:// or postgresql:// connection string.",
   },
   {
     name: "DIRECT_URL",
@@ -55,18 +56,20 @@ const envDefinitions: EnvDefinition[] = [
     category: "Supabase Postgres",
     required: true,
     source:
-      "Supabase Dashboard > Project Settings > Database > Connection string > Direct connection, port 5432",
+      "Supabase Dashboard > Settings > Database > Connection string > Direct connection, port 5432",
     validate: (value) =>
       value.startsWith("postgresql://") || value.startsWith("postgres://")
         ? null
-        : "Expected a postgres connection string.",
+        : "Expected a postgres:// or postgresql:// connection string.",
   },
+
+  // --- Supabase Auth ---
   {
     name: "NEXT_PUBLIC_SUPABASE_URL",
     label: "Supabase project URL",
     category: "Supabase Auth",
     required: true,
-    source: "Supabase Dashboard > Project Settings > API > Project URL",
+    source: "Supabase Dashboard > Settings > API > Project URL",
     validate: (value) =>
       /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(value)
         ? null
@@ -77,19 +80,21 @@ const envDefinitions: EnvDefinition[] = [
     label: "Supabase anon key",
     category: "Supabase Auth",
     required: true,
-    source: "Supabase Dashboard > Project Settings > API > anon public key",
+    source: "Supabase Dashboard > Settings > API > anon public key",
     validate: (value) =>
-      value.startsWith("eyJ") ? null : "Expected a JWT-looking key.",
+      value.startsWith("eyJ") ? null : "Expected a JWT (starts with eyJ).",
   },
   {
     name: "SUPABASE_SERVICE_ROLE_KEY",
     label: "Supabase service role key",
     category: "Supabase Auth",
     required: true,
-    source: "Supabase Dashboard > Project Settings > API > service_role secret key",
+    source: "Supabase Dashboard > Settings > API > service_role secret key",
     validate: (value) =>
-      value.startsWith("eyJ") ? null : "Expected a JWT-looking key.",
+      value.startsWith("eyJ") ? null : "Expected a JWT (starts with eyJ).",
   },
+
+  // --- GitHub ---
   {
     name: "GITHUB_CLIENT_ID",
     label: "GitHub OAuth client ID",
@@ -107,13 +112,27 @@ const envDefinitions: EnvDefinition[] = [
       "GitHub > Settings > Developer settings > OAuth Apps > your app > Client secrets",
   },
   {
+    name: "GITHUB_WEBHOOK_SECRET",
+    label: "GitHub webhook secret",
+    category: "GitHub",
+    required: true,
+    source:
+      "Any random string — paste the same value into GitHub repo Settings > Webhooks > Secret",
+  },
+  {
     name: "GITHUB_PAT",
     label: "GitHub personal access token",
     category: "GitHub",
     required: false,
     source:
-      "GitHub > Settings > Developer settings > Personal access tokens; used as a fallback for unauthenticated API calls",
+      "GitHub > Settings > Developer settings > Personal access tokens — optional fallback for unauthenticated API calls",
+    validate: (value) =>
+      value.startsWith("ghp_") || value.startsWith("github_pat_")
+        ? null
+        : "Expected a token starting with ghp_ or github_pat_.",
   },
+
+  // --- Redis ---
   {
     name: "REDIS_URL",
     label: "Redis connection URL",
@@ -125,35 +144,40 @@ const envDefinitions: EnvDefinition[] = [
         ? null
         : "Expected redis:// or rediss://.",
   },
+
+  // --- AI: Groq ---
   {
-    name: "OPENAI_API_KEY",
-    label: "OpenAI API key",
+    name: "GROQ_API_KEY",
+    label: "Groq API key",
     category: "AI",
     required: true,
     source:
-      "OpenAI Platform > API keys; used for text-embedding-3-small vectors",
+      "console.groq.com > API Keys > Create key — free, no credit card needed",
     validate: (value) =>
-      value.startsWith("sk-") ? null : "Expected a key beginning with sk-.",
+      value.startsWith("gsk_") ? null : "Expected a key starting with gsk_.",
   },
+
+  // --- AI: Gemini ---
   {
-    name: "ANTHROPIC_API_KEY",
-    label: "Anthropic API key",
+    name: "GEMINI_API_KEY",
+    label: "Gemini API key",
     category: "AI",
     required: true,
     source:
-      "Anthropic Console > API Keys; used for Claude issue classification and summaries",
+      "aistudio.google.com > Get API key — free, no credit card needed. Used for gemini-embedding-001 (768-dim vectors).",
     validate: (value) =>
-      value.startsWith("sk-ant-")
+      value.startsWith("AIza") || value.startsWith("AQ.")
         ? null
-        : "Expected a key beginning with sk-ant-.",
+        : "Expected a Gemini API key (starts with AIza or AQ.).",
   },
+
+  // --- App ---
   {
     name: "NEXT_PUBLIC_APP_URL",
     label: "Public app URL",
     category: "App",
     required: true,
-    source:
-      "Your local or deployed app origin, for example http://localhost:3000",
+    source: "Your local or deployed origin, e.g. http://localhost:3000",
     validate: (value) => {
       try {
         new URL(value);
@@ -163,25 +187,11 @@ const envDefinitions: EnvDefinition[] = [
       }
     },
   },
-  {
-    name: "GITHUB_WEBHOOK_SECRET",
-    label: "GitHub webhook secret",
-    category: "App",
-    required: true,
-    source:
-      "Generate a random string and paste the same value into GitHub repo webhook settings > Secret",
-  },
 ];
 
 function maskValue(value: string | undefined): string {
-  if (!value) {
-    return "";
-  }
-
-  if (value.length <= 10) {
-    return `${value.slice(0, 2)}...`;
-  }
-
+  if (!value) return "";
+  if (value.length <= 10) return `${value.slice(0, 2)}...`;
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
 }
 
@@ -227,7 +237,7 @@ async function checkPostgres(): Promise<ServiceCheck> {
     return {
       name: "Postgres",
       status: "skipped",
-      message: "Skipped because DATABASE_URL is missing.",
+      message: "Skipped — DATABASE_URL is missing.",
     };
   }
 
@@ -236,11 +246,10 @@ async function checkPostgres(): Promise<ServiceCheck> {
   try {
     await withTimeout(client.connect(), 5000);
     await withTimeout(client.query("select 1"), 5000);
-
     return {
       name: "Postgres",
       status: "ready",
-      message: "Connected and SELECT 1 succeeded.",
+      message: "Connected — SELECT 1 succeeded.",
     };
   } catch (error) {
     return {
@@ -260,7 +269,7 @@ async function checkRedis(): Promise<ServiceCheck> {
     return {
       name: "Redis",
       status: "skipped",
-      message: "Skipped because REDIS_URL is missing.",
+      message: "Skipped — REDIS_URL is missing.",
     };
   }
 
@@ -276,12 +285,11 @@ async function checkRedis(): Promise<ServiceCheck> {
   try {
     await withTimeout(redis.connect(), 5000);
     const pong = await withTimeout(redis.ping(), 5000);
-
     return {
       name: "Redis",
       status: pong === "PONG" ? "ready" : "invalid",
       message:
-        pong === "PONG" ? "PING returned PONG." : `Unexpected PING: ${pong}`,
+        pong === "PONG" ? "PING returned PONG." : `Unexpected response: ${pong}`,
     };
   } catch (error) {
     return {
@@ -302,17 +310,13 @@ async function checkSupabaseAdmin(): Promise<ServiceCheck> {
     return {
       name: "Supabase Admin",
       status: "skipped",
-      message:
-        "Skipped because NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing.",
+      message: "Skipped — NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing.",
     };
   }
 
   try {
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
+      auth: { autoRefreshToken: false, persistSession: false },
     });
 
     const { error } = await withTimeout(
@@ -321,17 +325,13 @@ async function checkSupabaseAdmin(): Promise<ServiceCheck> {
     );
 
     if (error) {
-      return {
-        name: "Supabase Admin",
-        status: "invalid",
-        message: error.message,
-      };
+      return { name: "Supabase Admin", status: "invalid", message: error.message };
     }
 
     return {
       name: "Supabase Admin",
       status: "ready",
-      message: "Service role key can call the Auth Admin API.",
+      message: "Service role key can reach the Auth Admin API.",
     };
   } catch (error) {
     return {
@@ -342,12 +342,100 @@ async function checkSupabaseAdmin(): Promise<ServiceCheck> {
   }
 }
 
+async function checkGroq(): Promise<ServiceCheck> {
+  const apiKey = process.env.GROQ_API_KEY;
+
+  if (!apiKey) {
+    return {
+      name: "Groq",
+      status: "skipped",
+      message: "Skipped — GROQ_API_KEY is missing.",
+    };
+  }
+
+  try {
+    const res = await withTimeout(
+      fetch("https://api.groq.com/openai/v1/models", {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      }),
+      5000
+    );
+
+    if (res.status === 401) {
+      return { name: "Groq", status: "invalid", message: "API key rejected (401)." };
+    }
+
+    if (!res.ok) {
+      return { name: "Groq", status: "invalid", message: `Unexpected status ${res.status}.` };
+    }
+
+    return {
+      name: "Groq",
+      status: "ready",
+      message: "API key accepted — models endpoint reachable.",
+    };
+  } catch (error) {
+    return {
+      name: "Groq",
+      status: "invalid",
+      message: error instanceof Error ? error.message : "Request failed.",
+    };
+  }
+}
+
+async function checkGemini(): Promise<ServiceCheck> {
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return {
+      name: "Gemini",
+      status: "skipped",
+      message: "Skipped — GEMINI_API_KEY is missing.",
+    };
+  }
+
+  try {
+    // try v1beta first, fall back to v1 (newer AQ. keys may use either)
+    const endpoints = [
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1/models/gemini-embedding-001?key=${apiKey}`,
+    ];
+
+    let lastStatus = 0;
+    for (const url of endpoints) {
+      const res = await withTimeout(fetch(url), 5000);
+      if (res.ok) {
+        return {
+          name: "Gemini",
+          status: "ready",
+          message: "API key accepted — gemini-embedding-001 is reachable.",
+        };
+      }
+      lastStatus = res.status;
+    }
+
+    if (lastStatus === 400 || lastStatus === 401 || lastStatus === 403) {
+      return { name: "Gemini", status: "invalid", message: `API key rejected (${lastStatus}).` };
+    }
+
+    return { name: "Gemini", status: "invalid", message: `Unexpected status ${lastStatus}.` };
+  } catch (error) {
+    return {
+      name: "Gemini",
+      status: "invalid",
+      message: error instanceof Error ? error.message : "Request failed.",
+    };
+  }
+}
+
 export async function getEnvReport(): Promise<EnvReport> {
   const envChecks = getEnvChecks();
   const serviceChecks = await Promise.all([
     checkPostgres(),
-    checkRedis(),
     checkSupabaseAdmin(),
+    checkRedis(),
+    checkGroq(),
+    checkGemini(),
   ]);
 
   return {

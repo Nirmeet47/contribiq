@@ -1,5 +1,6 @@
 // raw issue data lands here first with classified=false
-// claude comes along later and fills in the ai* fields, then flips classified=true
+// groq comes along later and fills in the ai* fields, then flips classified=true
+// vector embeddings live in issue_embeddings so normal Issue queries stay typed
 
 model Issue {
   id            String     @id @default(cuid())
@@ -13,20 +14,33 @@ model Issue {
   classified    Boolean    @default(false)
 
   // filled in by the classification agent
-  aiSummary      String?    @db.Text
+  aiSummary      String?     @db.Text
   difficulty     Difficulty?
   estimatedHours Float?
-  requiredSkills String[]   // e.g. ["React", "TypeScript", "DOM Events"]
+  requiredSkills String[] // e.g. ["React", "TypeScript", "DOM Events"]
   issueType      IssueType?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  repo      Repo            @relation(fields: [repoId], references: [id], onDelete: Cascade)
-  matches   IssueMatch[]
-  bookmarks Bookmark[]
-  feedback  IssueFeedback[]
+  repo           Repo            @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  matches        IssueMatch[]
+  bookmarks      Bookmark[]
+  feedback       IssueFeedback[]
+  issueEmbedding IssueEmbedding?
 
   @@unique([githubId, repoId])
   @@map("issues")
+}
+
+// Prisma can create this table, but reads/writes involving embedding must use
+// prisma.$queryRaw / prisma.$executeRaw because pgvector is Unsupported.
+model IssueEmbedding {
+  issueId   String                     @id @map("issue_id")
+  embedding Unsupported("vector(768)")
+  updatedAt DateTime                   @default(now()) @updatedAt @map("updated_at")
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@map("issue_embeddings")
 }

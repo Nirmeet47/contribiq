@@ -1,47 +1,39 @@
-// embeddings via hugging face inference API (free, no credit card needed)
-// model: sentence-transformers/all-MiniLM-L6-v2 → outputs 384-dim vectors
-// get your token at: huggingface.co/settings/tokens (just make a free account)
+// embeddings via gemini-embedding-001 (google ai studio — free tier)
+// outputs 768-dim vectors, stored in pgvector in supabase
+// get your key at: aistudio.google.com → get api key (free, no credit card)
 
-import { HfInference } from "@huggingface/inference";
+import { GoogleGenAI } from "@google/genai";
 
-const globalForHf = globalThis as unknown as {
-  hf: HfInference | undefined;
+const globalForGenAI = globalThis as unknown as {
+  genai: GoogleGenAI | undefined;
 };
 
-export const hf =
-  globalForHf.hf ??
-  new HfInference(process.env.HUGGINGFACE_TOKEN);
+export const genai =
+  globalForGenAI.genai ??
+  new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 if (process.env.NODE_ENV !== "production") {
-  globalForHf.hf = hf;
+  globalForGenAI.genai = genai;
 }
 
-export const EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2";
-export const EMBEDDING_DIMENSIONS = 384;
+export const EMBEDDING_MODEL = "gemini-embedding-001";
+export const EMBEDDING_DIMENSIONS = 768;
 
 // embed a single string — used for issue requiredSkills and skill profiles
 export async function embed(text: string): Promise<number[]> {
-  const result = await hf.featureExtraction({
+  const response = await genai.models.embedContent({
     model: EMBEDDING_MODEL,
-    inputs: text,
+    contents: text,
+    config: {
+      outputDimensionality: EMBEDDING_DIMENSIONS,
+    },
   });
 
-  // featureExtraction returns number[] | number[][] depending on input
-  // for a single string it comes back as number[]
-  if (Array.isArray(result) && typeof result[0] === "number") {
-    return result as number[];
-  }
-
-  // if it comes back nested, take the first row
-  return (result as number[][])[0];
+  return response.embeddings![0].values!;
 }
 
-// embed multiple strings in one call — more efficient for batch jobs
+// embed multiple strings — used by batch classification and match scoring jobs
 export async function embedBatch(texts: string[]): Promise<number[][]> {
-  const result = await hf.featureExtraction({
-    model: EMBEDDING_MODEL,
-    inputs: texts,
-  });
-
-  return result as number[][];
+  const results = await Promise.all(texts.map((t) => embed(t)));
+  return results;
 }

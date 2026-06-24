@@ -6,7 +6,7 @@ model User {
   username       String   @unique
   name           String?
   avatarUrl      String?
-  githubToken    String?  // stored encrypted, used for github api calls on behalf of the user
+  githubToken    String? // stored encrypted, used for github api calls on behalf of the user
   interests      String[] // picked during onboarding e.g. ["frontend", "ai"]
   timeCommitment Int      @default(0) // hours/week the dev said they can contribute
   onboarded      Boolean  @default(false) // flips to true once they finish the onboarding wizard

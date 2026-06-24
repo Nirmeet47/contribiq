@@ -16,7 +16,7 @@ model Contribution {
   // filled in after the agent reads the PR diff
   aiDescription      String?  @db.Text
   skillsDemonstrated String[] // skills the agent picked up from the diff
-  complexity         Int?     // 1–5, rough gauge of how hard the PR was
+  complexity         Int? // 1–5, rough gauge of how hard the PR was
   linesAdded         Int?
   linesRemoved       Int?
   filesChanged       Int?

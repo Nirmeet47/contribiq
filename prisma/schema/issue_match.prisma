@@ -6,10 +6,10 @@ model IssueMatch {
   id          String @id @default(cuid())
   userId      String
   issueId     String
-  score       Float  // final score shown as "91% match" in the feed
-  skillSim    Float  // cosine similarity from pgvector, makes up 70% of the score
-  interestSim Float  // does the repo category match what the user said they like
-  diffScore   Float  // is the difficulty actually suitable for where this user is at
+  score       Float // final score shown as "91% match" in the feed
+  skillSim    Float // cosine similarity from pgvector, makes up 70% of the score
+  interestSim Float // does the repo category match what the user said they like
+  diffScore   Float // is the difficulty actually suitable for where this user is at
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

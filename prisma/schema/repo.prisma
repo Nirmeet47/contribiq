@@ -3,17 +3,17 @@
 
 model Repo {
   id              String    @id @default(cuid())
-  owner           String    // "vercel"
-  name            String    // "next.js"
+  owner           String // "vercel"
+  name            String // "next.js"
   fullName        String    @unique // "vercel/next.js"
   description     String?
-  categories      String[]  // ["frontend", "framework"] — matched against user interests
+  categories      String[] // ["frontend", "framework"] — matched against user interests
   stars           Int       @default(0)
   language        String?
   maintainerScore Float     @default(0) // how responsive the maintainers are, 0–1
   activityScore   Float     @default(0) // recent commit/PR activity, 0–1
   lastFetchedAt   DateTime?
-  faissIndexPath  String?   // where the FAISS index for this repo lives on disk
+  faissIndexPath  String? // where the FAISS index for this repo lives on disk
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 

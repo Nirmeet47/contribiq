@@ -4,9 +4,9 @@
 model Skill {
   id             String     @id @default(cuid())
   skillProfileId String
-  name           String     // "React", "TypeScript", "Node.js", etc.
+  name           String // "React", "TypeScript", "Node.js", etc.
   level          SkillLevel
-  confidence     Float      // 0.0 – 1.0
+  confidence     Float // 0.0 – 1.0
   repoCount      Int        @default(0)
   commitCount    Int        @default(0)
   createdAt      DateTime   @default(now())
