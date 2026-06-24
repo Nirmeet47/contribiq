@@ -4,7 +4,7 @@
 import { Queue } from "bullmq";
 import { redis } from "./redis";
 
-const connection = redis;
+const connection = redis as any;
 
 // cron triggers this every 6h to pull fresh issues from all curated repos
 export const issueFetchQueue = new Queue("issue-fetch", { connection });
