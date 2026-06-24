@@ -1,8 +1,11 @@
-// run this in the supabase sql editor after enabling the vector extension
-// and after prisma db push has created the rest of the tables
-//
-// prisma can't model vector(1536) columns natively so these two tables
-// live outside the schema and get managed via raw sql
+-- run this in the supabase sql editor after enabling the vector extension
+-- and after prisma db push has created the rest of the tables
+--
+-- prisma can't model vector(384) columns natively so these two tables
+-- live outside the schema and get managed via raw sql
+--
+-- embeddings are 384-dim because we use sentence-transformers/all-MiniLM-L6-v2
+-- via the hugging face inference api (free, no credit card)
 
 create extension if not exists vector;
 
@@ -11,7 +14,7 @@ create extension if not exists vector;
 create table if not exists skill_embeddings (
   id         text primary key,
   user_id    text not null,
-  embedding  vector(1536),
+  embedding  vector(384),
   updated_at timestamptz not null default now()
 );
 
@@ -25,7 +28,7 @@ create index if not exists skill_embeddings_embedding_idx
 create table if not exists issue_embeddings (
   id         text primary key,
   issue_id   text not null,
-  embedding  vector(1536),
+  embedding  vector(384),
   updated_at timestamptz not null default now()
 );
 
