@@ -1,6 +1,8 @@
 import Link from "next/link"
 import { ArrowRight, Code2, GitMerge, GitPullRequest, Search, Star, Terminal } from "lucide-react"
 
+import { createClient } from "@/utils/supabase/server"
+
 async function getTopRepos() {
   try {
     const res = await fetch(
@@ -17,6 +19,8 @@ async function getTopRepos() {
 
 export default async function Home() {
   const repos = await getTopRepos()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-50 font-sans selection:bg-indigo-500/30">
@@ -30,19 +34,31 @@ export default async function Home() {
             <span className="text-lg font-bold tracking-tight">ContribIQ</span>
           </div>
           <div className="flex items-center gap-4">
-            <Link 
-              href="/login" 
-              className="text-sm font-medium text-zinc-400 transition-colors hover:text-white"
-            >
-              Sign In
-            </Link>
-            <Link 
-              href="/login" 
-              className="flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-medium text-zinc-950 transition-colors hover:bg-zinc-200"
-            >
-              Get Started
-              <ArrowRight className="h-4 w-4" />
-            </Link>
+            {user ? (
+              <Link 
+                href="/dashboard" 
+                className="flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-medium text-zinc-950 transition-colors hover:bg-zinc-200"
+              >
+                Go to Dashboard
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            ) : (
+              <>
+                <Link 
+                  href="/login" 
+                  className="text-sm font-medium text-zinc-400 transition-colors hover:text-white"
+                >
+                  Sign In
+                </Link>
+                <Link 
+                  href="/login" 
+                  className="flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-medium text-zinc-950 transition-colors hover:bg-zinc-200"
+                >
+                  Get Started
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </nav>

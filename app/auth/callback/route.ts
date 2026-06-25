@@ -28,6 +28,8 @@ export async function GET(request: Request) {
 
         const githubToken = session.provider_token ?? null
 
+        let isOnboarded = false;
+
         if (!existingUser) {
           // Create new user (First login)
           const newUser = await prisma.user.create({
@@ -36,8 +38,6 @@ export async function GET(request: Request) {
               username: user.user_metadata?.user_name || `user_${githubId}`,
               name: user.user_metadata?.full_name || null,
               avatarUrl: user.user_metadata?.avatar_url || null,
-              // Note: storing plaintext as per current demo setup.
-              // In production, this should be encrypted using a server-side ENCRYPTION_KEY.
               githubToken,
               onboarded: false,
             }
@@ -49,17 +49,21 @@ export async function GET(request: Request) {
               userId: newUser.id
             }
           })
-        } else if (githubToken) {
-          // Update the token if it changed (e.g. they re-authenticated)
-          // We can also update their avatar/name if we wanted, but token is important.
-          await prisma.user.update({
-            where: { id: existingUser.id },
-            data: { githubToken }
-          })
+          
+          isOnboarded = false;
+        } else {
+          isOnboarded = existingUser.onboarded;
+          if (githubToken) {
+            // Update the token if it changed
+            await prisma.user.update({
+              where: { id: existingUser.id },
+              data: { githubToken }
+            })
+          }
         }
-      }
 
-      return NextResponse.redirect(`${origin}${next}`)
+        return NextResponse.redirect(`${origin}${next}`)
+      }
     }
   }
 
