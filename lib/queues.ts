@@ -1,10 +1,10 @@
 // all background queues in one place
 // actual worker logic lives in workers/ — these are just the queue handles used to enqueue jobs
 
-import { Queue } from "bullmq";
+import { Queue, type ConnectionOptions } from "bullmq";
 import { redis } from "./redis";
 
-const connection = redis as any;
+const connection = redis as unknown as ConnectionOptions;
 
 // cron triggers this every 6h to pull fresh issues from all curated repos
 export const issueFetchQueue = new Queue("issue-fetch", { connection });

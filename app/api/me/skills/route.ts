@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/prisma";
+import type { Skill } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -33,10 +34,10 @@ export async function GET() {
     }
 
     // Calculate a summary from the skills
-    const skills = dbUser.skillProfile.skills;
+    const skills = dbUser.skillProfile.skills as Skill[];
     const summary = {
-      totalCommits: skills.reduce((acc, s) => acc + s.commitCount, 0),
-      totalRepos: Math.max(...skills.map(s => s.repoCount), 0), // rough estimate
+      totalCommits: skills.reduce((acc: number, s) => acc + s.commitCount, 0),
+      totalRepos: Math.max(...skills.map((s) => s.repoCount), 0), // rough estimate
       mergedPRs: 0 // could be added to schema later
     };
 

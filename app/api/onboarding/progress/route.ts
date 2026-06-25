@@ -68,14 +68,17 @@ export async function GET() {
         Connection: "keep-alive",
       },
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     // if the agent backend isn't running, give a clear error
     const encoder = new TextEncoder();
     const errorStream = new ReadableStream({
       start(controller) {
-        const msg = err.message?.includes("ECONNREFUSED")
+        const errorMessage = err instanceof Error ? err.message : "Failed to connect to agent backend";
+        console.error("[onboarding/progress]", errorMessage);
+
+        const msg = errorMessage.includes("ECONNREFUSED") || errorMessage.includes("fetch failed")
           ? "Agent backend is not running. Start it with: uvicorn agent.main:app --reload --port 8000"
-          : err.message || "Failed to connect to agent backend";
+          : errorMessage;
 
         controller.enqueue(
           encoder.encode(`data: ${JSON.stringify({ step: "error", message: msg })}\n\n`)

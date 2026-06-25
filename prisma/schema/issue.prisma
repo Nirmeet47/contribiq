@@ -8,6 +8,7 @@ model Issue {
   repoId        String
   title         String
   body          String?    @db.Text
+  labels        String[]
   state         IssueState @default(open)
   assigneeCount Int        @default(0)
   githubUrl     String

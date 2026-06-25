@@ -2,10 +2,14 @@
 
 import { useEffect, useState, useRef } from "react"
 import { createClient } from "@/utils/supabase/client"
+import type { User as SupabaseUser } from "@supabase/supabase-js"
+import { IssueFeed } from "./issue-feed"
 import {
-  LogOut, Code2, GitPullRequest, Star, User, BookOpen,
+  LogOut, Code2, GitPullRequest, BookOpen,
   CheckCircle2, Loader2, XCircle, GitMerge, Brain, Fingerprint,
-  ArrowRight, GripVertical, Pencil, Plus, Save, X, FolderGit2
+  ArrowRight, GripVertical, Pencil, Plus, Save, X, FolderGit2,
+  Server, Container, TestTube2, Wrench, Smartphone, Clock,
+  LayoutDashboard, Inbox, Settings
 } from "lucide-react"
 
 // -- Types --
@@ -17,7 +21,16 @@ interface Skill {
   commitCount: number
 }
 
-type ViewState = "loading" | "onboarding" | "skills_review" | "dashboard"
+interface DbUser {
+  name?: string | null
+  username?: string | null
+  avatarUrl?: string | null
+  onboarded?: boolean
+  interests?: string[]
+  timeCommitment?: number
+}
+
+type ViewState = "loading" | "onboarding" | "skills_review" | "interests" | "time_commitment" | "dashboard"
 
 // -- Configs --
 const STEP_META: Record<string, { icon: React.ReactNode; label: string }> = {
@@ -29,6 +42,23 @@ const STEP_META: Record<string, { icon: React.ReactNode; label: string }> = {
   error: { icon: <XCircle className="h-5 w-5" />, label: "Error" },
 }
 const STEP_ORDER = ["fetching", "analysing", "writing", "embedding", "done"]
+
+const INTEREST_OPTIONS = [
+  { value: "frontend", label: "Frontend", icon: Code2 },
+  { value: "backend", label: "Backend", icon: Server },
+  { value: "ai", label: "AI", icon: Brain },
+  { value: "devops", label: "DevOps", icon: Container },
+  { value: "docs", label: "Docs", icon: BookOpen },
+  { value: "testing", label: "Testing", icon: TestTube2 },
+  { value: "tools", label: "Tools", icon: Wrench },
+  { value: "mobile", label: "Mobile", icon: Smartphone },
+]
+
+const TIME_OPTIONS = [
+  { label: "< 5 hrs / week", value: 4, detail: "Light weekly pace" },
+  { label: "5–10 hrs / week", value: 7, detail: "Steady contribution rhythm" },
+  { label: "10+ hrs / week", value: 12, detail: "Deep focus capacity" },
+]
 
 const LEVEL_CONFIG = {
   strong: {
@@ -53,8 +83,8 @@ export default function DashboardPage() {
   const supabase = createClient()
 
   // -- Global State --
-  const [user, setUser] = useState<any>(null)
-  const [dbUser, setDbUser] = useState<any>(null)
+  const [user, setUser] = useState<SupabaseUser | null>(null)
+  const [dbUser, setDbUser] = useState<DbUser | null>(null)
   const [viewState, setViewState] = useState<ViewState>("loading")
 
   // -- Onboarding State --
@@ -69,11 +99,27 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState({ totalCommits: 0, totalRepos: 0, mergedPRs: 0 })
   const [editMode, setEditMode] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [selectedInterests, setSelectedInterests] = useState<string[]>([])
+  const [selectedTimeCommitment, setSelectedTimeCommitment] = useState<number | null>(null)
   const [newSkillInputs, setNewSkillInputs] = useState<Record<Level, string>>({
     strong: "", moderate: "", learning: "",
   })
   const dragItem = useRef<{ name: string; fromLevel: Level } | null>(null)
   const [dragOverLevel, setDragOverLevel] = useState<Level | null>(null)
+
+  // -- Helpers --
+  async function fetchSkills() {
+    try {
+      const r = await fetch("/api/me/skills")
+      const data = await r.json()
+      if (data.skills) {
+        setSkills(data.skills)
+        setSummary(data.summary)
+      }
+    } catch (e) {
+      console.error("Failed to fetch skills", e)
+    }
+  }
 
   // 1. Initial Load & Auth Check
   useEffect(() => {
@@ -141,21 +187,6 @@ export default function DashboardPage() {
 
     return () => eventSource.close()
   }, [viewState])
-
-  // -- Helpers --
-  const fetchSkills = async () => {
-    try {
-      const r = await fetch("/api/me/skills")
-      const data = await r.json()
-      if (data.skills) {
-        setSkills(data.skills)
-        setSummary(data.summary)
-      }
-    } catch (e) {
-      console.error("Failed to fetch skills", e)
-    }
-  }
-
   const handleLogout = async () => {
     await supabase.auth.signOut()
     window.location.href = "/login"
@@ -180,9 +211,43 @@ export default function DashboardPage() {
   }
 
   const handleFinishOnboarding = () => {
-    // If we're coming from the review screen, the backend already marked them onboarded during SSE
-    // Just switch to dashboard view
-    setViewState("dashboard")
+    setViewState("interests")
+  }
+
+  const toggleInterest = (interest: string) => {
+    setSelectedInterests((prev) =>
+      prev.includes(interest)
+        ? prev.filter((value) => value !== interest)
+        : [...prev, interest]
+    )
+  }
+
+  const handleCompletePreferences = async () => {
+    if (selectedInterests.length === 0 || selectedTimeCommitment === null) return
+
+    setSaving(true)
+    try {
+      const res = await fetch("/api/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          interests: selectedInterests,
+          timeCommitment: selectedTimeCommitment,
+          onboarded: true,
+        }),
+      })
+
+      if (!res.ok) {
+        throw new Error("Failed to save onboarding preferences")
+      }
+
+      await fetchSkills()
+      setViewState("dashboard")
+    } catch (err) {
+      console.error("Failed to complete onboarding:", err)
+    } finally {
+      setSaving(false)
+    }
   }
 
   // -- Drag Handlers --
@@ -342,7 +407,7 @@ export default function DashboardPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="space-y-1">
-                <p className="text-xs font-bold uppercase tracking-widest text-emerald-500">Step 2 of 3</p>
+                <p className="text-xs font-bold uppercase tracking-widest text-emerald-500">Step 2 of 4</p>
                 <h1 className="text-3xl font-bold tracking-tight">Your Skill Profile</h1>
               </div>
               <button
@@ -361,6 +426,7 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="space-y-6">
+            {/* eslint-disable-next-line react-hooks/refs */}
             {renderSkillGroups()}
           </div>
           <div className="flex justify-end">
@@ -373,156 +439,149 @@ export default function DashboardPage() {
     )
   }
 
-  const avatarUrl = dbUser?.avatarUrl || user?.user_metadata?.avatar_url
+  if (viewState === "interests") {
+    return (
+      <main className="min-h-screen bg-zinc-950 text-zinc-50 font-sans selection:bg-emerald-500/30">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
+        <div className="relative z-10 mx-auto max-w-4xl px-6 py-16 space-y-10">
+          <div className="space-y-2">
+            <h1 className="text-3xl font-bold tracking-tight">Step 3 of 4 — What do you want to work on?</h1>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {INTEREST_OPTIONS.map((interest) => {
+              const Icon = interest.icon
+              const active = selectedInterests.includes(interest.value)
+              return (
+                <button
+                  key={interest.value}
+                  type="button"
+                  onClick={() => toggleInterest(interest.value)}
+                  className={`flex min-h-32 flex-col justify-between rounded-sm border p-4 text-left transition-all ${active ? "border-emerald-500 bg-emerald-500/10 text-emerald-300 shadow-[0_0_0_1px_rgba(16,185,129,0.15)]" : "border-zinc-800 bg-zinc-950 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-900/70"}`}
+                >
+                  <div className="flex items-start justify-between">
+                    <Icon className={`h-5 w-5 ${active ? "text-emerald-400" : "text-zinc-500"}`} />
+                    <span className={`flex h-5 w-9 items-center rounded-full border p-0.5 transition-colors ${active ? "border-emerald-500/40 bg-emerald-500/20" : "border-zinc-700 bg-zinc-900"}`}>
+                      <span className={`h-3.5 w-3.5 rounded-full transition-transform ${active ? "translate-x-3.5 bg-emerald-400" : "translate-x-0 bg-zinc-600"}`} />
+                    </span>
+                  </div>
+                  <span className="text-base font-bold">{interest.label}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="flex justify-end">
+            <button
+              onClick={() => setViewState("time_commitment")}
+              disabled={selectedInterests.length === 0}
+              className="flex items-center gap-2 rounded-sm bg-emerald-500 px-6 py-3 text-sm font-bold text-zinc-950 transition-colors hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
+            >
+              Continue <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
+  if (viewState === "time_commitment") {
+    return (
+      <main className="min-h-screen bg-zinc-950 text-zinc-50 font-sans selection:bg-emerald-500/30">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
+        <div className="relative z-10 mx-auto max-w-3xl px-6 py-16 space-y-10">
+          <div className="space-y-2">
+            <h1 className="text-3xl font-bold tracking-tight">Step 4 of 4 — How much time can you commit?</h1>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            {TIME_OPTIONS.map((option) => {
+              const active = selectedTimeCommitment === option.value
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setSelectedTimeCommitment(option.value)}
+                  className={`min-h-36 rounded-sm border p-5 text-left transition-all ${active ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300" : "border-zinc-800 bg-zinc-950 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-900/70"}`}
+                >
+                  <div className="mb-8 flex items-center justify-between">
+                    <Clock className={`h-5 w-5 ${active ? "text-emerald-400" : "text-zinc-500"}`} />
+                    <span className={`h-4 w-4 rounded-sm border ${active ? "border-emerald-400 bg-emerald-400" : "border-zinc-700 bg-zinc-900"}`} />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xl font-bold">{option.label}</p>
+                    <p className="text-xs font-medium text-zinc-500">{option.detail}</p>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="flex justify-between">
+            <button onClick={() => setViewState("interests")} className="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-sm font-bold text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-white">
+              Back
+            </button>
+            <button
+              onClick={handleCompletePreferences}
+              disabled={selectedTimeCommitment === null || saving}
+              className="flex items-center gap-2 rounded-sm bg-emerald-500 px-6 py-3 text-sm font-bold text-zinc-950 transition-colors hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Let's Go"} {!saving && <ArrowRight className="h-4 w-4" />}
+            </button>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
   const name = dbUser?.name || user?.user_metadata?.full_name || "Developer"
-  const username = dbUser?.username || user?.user_metadata?.preferred_username
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-50 font-sans selection:bg-emerald-500/30">
-      <nav className="border-b border-zinc-900 bg-zinc-950/80 backdrop-blur-md sticky top-0 z-50">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+      <div className="flex min-h-screen">
+        <aside className="hidden w-64 border-r border-zinc-900 bg-zinc-950 p-5 md:block">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center bg-white">
               <Code2 className="h-5 w-5 text-zinc-950" strokeWidth={2.5} />
             </div>
             <span className="text-lg font-bold tracking-tight">ContribIQ</span>
           </div>
-          <button onClick={handleLogout} className="flex items-center gap-2 rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-800 hover:text-white">
+          <div className="mt-8 space-y-2">
+            {[
+              { label: "Dashboard", icon: LayoutDashboard },
+              { label: "Matches", icon: Inbox },
+              { label: "Skills", icon: BookOpen },
+              { label: "Settings", icon: Settings },
+            ].map((item) => {
+              const Icon = item.icon
+              return (
+                <a key={item.label} href="#" className="flex items-center gap-3 rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-white">
+                  <Icon className="h-4 w-4" />
+                  {item.label}
+                </a>
+              )
+            })}
+          </div>
+          <button onClick={handleLogout} className="mt-8 flex w-full items-center gap-2 rounded-sm border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-800 hover:text-white">
             <LogOut className="h-4 w-4" /> Sign Out
           </button>
-        </div>
-      </nav>
+        </aside>
 
-      <div className="fixed inset-0 z-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none"></div>
-
-      <div className="relative z-10 mx-auto max-w-7xl p-6 sm:p-10 space-y-10">
-        <div className="grid gap-8 lg:grid-cols-[1fr_350px]">
-          {/* Left Column */}
-          <div className="space-y-8">
-            <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-8">
-              <div className="flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
-                {avatarUrl ? (
-                  <div className="h-20 w-20 flex-shrink-0 border border-zinc-800 bg-zinc-900 p-1 rounded-sm">
-                    <img src={avatarUrl} alt={name} className="h-full w-full object-cover rounded-sm grayscale hover:grayscale-0 transition-all" />
-                  </div>
-                ) : (
-                  <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center border border-zinc-800 bg-zinc-900 rounded-sm">
-                    <User className="h-8 w-8 text-zinc-500" />
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <h2 className="text-3xl font-bold tracking-tight text-white">Welcome back, {name}</h2>
-                  <p className="text-zinc-400 max-w-lg leading-relaxed">We've analyzed your GitHub history. Check out your personalized open-source recommendations based on your skill fingerprint.</p>
-                  {username && (
-                    <div className="inline-flex items-center gap-2 rounded-sm border border-zinc-800 bg-zinc-900/50 px-3 py-1 text-xs font-medium text-zinc-400 mt-2">
-                      <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" /></svg>
-                      github.com/{username}
-                    </div>
-                  )}
-                </div>
-              </div>
+        <section className="flex-1 border-r border-zinc-900 p-6 sm:p-8">
+          <div className="mb-8 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-zinc-500">Welcome back</p>
+              <h1 className="text-2xl font-bold tracking-tight">{name}</h1>
             </div>
-
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold tracking-tight text-zinc-100 flex items-center gap-2"><Star className="h-5 w-5 text-zinc-400" />Recommended Issues</h3>
-                <span className="rounded-sm bg-zinc-900 px-3 py-1 text-xs font-medium text-zinc-400 border border-zinc-800">Coming Soon</span>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                {[1, 2].map((i) => (
-                  <div key={i} className="group cursor-pointer rounded-sm border border-zinc-800 bg-zinc-950 p-6 transition-all hover:border-zinc-600 hover:bg-zinc-900/50">
-                    <div className="flex items-start justify-between gap-4 mb-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2"><span className="text-xs font-medium text-zinc-500">facebook/react</span></div>
-                        <h4 className="font-semibold text-zinc-200 group-hover:text-white transition-colors line-clamp-2">Bug: Hydration mismatch on server render</h4>
-                      </div>
-                      <div className="rounded-sm bg-zinc-900 border border-zinc-800 p-2 text-zinc-400 group-hover:border-zinc-600 group-hover:text-zinc-300 transition-colors"><GitPullRequest className="h-4 w-4" /></div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-sm bg-zinc-900 px-2 py-1 text-[10px] font-medium text-zinc-400 border border-zinc-800">React</span>
-                      <span className="rounded-sm bg-zinc-900 px-2 py-1 text-[10px] font-medium text-zinc-400 border border-zinc-800">Good first issue</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <button onClick={handleLogout} className="flex items-center gap-2 rounded-sm border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800 md:hidden">
+              <LogOut className="h-4 w-4" /> Sign Out
+            </button>
           </div>
 
-          {/* Right Column: Actual Skill Profile */}
-          <div className="space-y-6">
-            <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-2">
-                  <BookOpen className="h-4 w-4" /> Skill Profile
-                </h3>
-                <button
-                  onClick={() => (editMode ? handleSaveSkills() : setEditMode(true))}
-                  disabled={saving}
-                  className={`flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs font-bold transition-colors ${editMode ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30" : "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:bg-zinc-800 hover:text-white"}`}
-                >
-                  {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : editMode ? <Save className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
-                  {editMode ? "Save" : "Edit"}
-                </button>
-              </div>
-              
-              {editMode ? (
-                // If editing from the dashboard, show the drag-and-drop UI
-                <div className="space-y-4 -mx-2">
-                  {renderSkillGroups()}
-                </div>
-              ) : (
-                // Normal dashboard view - show progress bars for top skills
-                <div className="space-y-5">
-                  {skills.length > 0 ? (
-                    // Show top 6 skills sorted by confidence
-                    [...skills].sort((a, b) => b.confidence - a.confidence).slice(0, 6).map((skill) => {
-                      const levelCfg = LEVEL_CONFIG[skill.level];
-                      const percentage = Math.round(skill.confidence * 100);
-                      return (
-                        <div key={skill.name} className="space-y-2">
-                          <div className="flex items-center justify-between text-sm">
-                            <div className="flex items-center gap-2">
-                              <span className={`h-1.5 w-1.5 rounded-sm ${levelCfg.dot}`} />
-                              <span className="font-medium text-zinc-300">{skill.name}</span>
-                            </div>
-                            <span className="text-zinc-500 font-medium">{percentage}%</span>
-                          </div>
-                          <div className="h-1.5 w-full overflow-hidden rounded-sm bg-zinc-900 border border-zinc-800">
-                            <div className={`h-full rounded-sm ${levelCfg.dot}`} style={{ width: `${percentage}%` }} />
-                          </div>
-                        </div>
-                      )
-                    })
-                  ) : (
-                    <div className="text-center p-4">
-                      <p className="text-sm text-zinc-500">No skills found. Let's analyze your profile.</p>
-                      <button onClick={() => setViewState("onboarding")} className="mt-3 rounded-sm bg-emerald-500/20 px-3 py-1.5 text-xs font-bold text-emerald-400 hover:bg-emerald-500/30 transition-colors">
-                        Run Analysis
-                      </button>
-                    </div>
-                  )}
-                  {skills.length > 6 && (
-                    <p className="text-xs text-center text-zinc-600 font-medium pt-2">
-                      + {skills.length - 6} more skills in your fingerprint
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
+          <IssueFeed />
+        </section>
 
-            <details className="group rounded-sm border border-zinc-800 bg-zinc-950 p-4">
-              <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-300 transition-colors">View Raw Session Data</summary>
-              <div className="mt-4 space-y-4">
-                <div className="space-y-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-600">Prisma Record</span>
-                  <pre className="max-h-40 overflow-auto rounded-sm bg-zinc-900 p-3 text-[10px] text-zinc-400 border border-zinc-800 custom-scrollbar">
-                    {JSON.stringify(dbUser, null, 2)}
-                  </pre>
-                </div>
-              </div>
-            </details>
-          </div>
-        </div>
+        <aside className="hidden w-80 bg-zinc-950 p-6 lg:block" />
       </div>
 
       <style jsx global>{`
