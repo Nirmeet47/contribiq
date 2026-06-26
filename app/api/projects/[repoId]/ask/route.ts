@@ -112,10 +112,31 @@ export async function POST(
     ],
     temperature: 0.1,
     max_tokens: 500,
+    stream: true,
   });
 
-  return NextResponse.json({
-    answer: completion.choices[0].message.content ?? "",
-    sourceChunks,
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        for await (const chunk of completion) {
+          const token = chunk.choices[0]?.delta?.content;
+          if (token) {
+            controller.enqueue(encoder.encode(token));
+          }
+        }
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+    },
   });
 }

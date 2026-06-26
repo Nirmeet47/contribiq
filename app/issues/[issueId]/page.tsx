@@ -1,11 +1,13 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AppShell } from "@/app/app-shell";
 import {
   Clock,
   ExternalLink,
   GitPullRequest,
   Loader2,
+  MessageSquare,
   RefreshCw,
   Tag,
   Users,
@@ -23,6 +25,7 @@ type IssueDetailResponse = {
     labels: string[];
     state: "open" | "closed";
     assigneeCount: number;
+    commentCount: number;
     githubUrl: string;
     aiSummary: string | null;
     difficulty: Difficulty | null;
@@ -56,6 +59,17 @@ type IssueDetailResponse = {
     githubUrl: string;
     requiredSkills: string[];
   }>;
+  comments: Array<{
+    id: number;
+    body: string | null;
+    createdAt: string;
+    githubUrl: string;
+    author: {
+      login: string;
+      avatarUrl: string;
+      githubUrl: string;
+    } | null;
+  }>;
   workersCount: number;
   isWorking: boolean;
 };
@@ -88,6 +102,14 @@ function percentage(value: number) {
   return Math.round(Math.max(0, Math.min(1, value)) * 100);
 }
 
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
 function ProgressRow({ label, value }: { label: string; value: number }) {
   const width = percentage(value);
 
@@ -106,7 +128,7 @@ function ProgressRow({ label, value }: { label: string; value: number }) {
 
 function LoadingSkeleton() {
   return (
-    <main className="min-h-screen bg-zinc-950 p-6 text-zinc-50 sm:p-8">
+    <section className="p-6 text-zinc-50 sm:p-8">
       <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <div className="h-40 animate-pulse rounded-sm border border-zinc-800 bg-zinc-900" />
@@ -118,7 +140,7 @@ function LoadingSkeleton() {
           <div className="h-36 animate-pulse rounded-sm border border-zinc-800 bg-zinc-900" />
         </div>
       </div>
-    </main>
+    </section>
   );
 }
 
@@ -141,12 +163,17 @@ export default function IssuePage({
   });
 
   if (issueQuery.isLoading) {
-    return <LoadingSkeleton />;
+    return (
+      <AppShell>
+        <LoadingSkeleton />
+      </AppShell>
+    );
   }
 
   if (issueQuery.isError || !issueQuery.data) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-zinc-950 p-6 text-zinc-50">
+      <AppShell>
+      <section className="flex min-h-screen items-center justify-center p-6 text-zinc-50">
         <div className="w-full max-w-md rounded-sm border border-red-500/30 bg-red-500/10 p-5 text-center">
           <p className="mb-4 text-sm font-medium text-red-300">Issue could not be loaded.</p>
           <button
@@ -158,15 +185,17 @@ export default function IssuePage({
             Retry
           </button>
         </div>
-      </main>
+      </section>
+      </AppShell>
     );
   }
 
-  const { issue, match, workersCount, isWorking } = issueQuery.data;
+  const { issue, match, similarIssues, comments, workersCount, isWorking } = issueQuery.data;
   const matchScore = match ? Math.round(match.score * 100) : 0;
 
   return (
-    <main className="min-h-screen bg-zinc-950 p-6 text-zinc-50 selection:bg-emerald-500/30 sm:p-8">
+    <AppShell>
+    <section className="p-6 text-zinc-50 sm:p-8">
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="space-y-2">
           <p className="text-sm font-bold uppercase tracking-widest text-emerald-400">
@@ -198,8 +227,9 @@ export default function IssuePage({
                   <Users className="h-3 w-3" />
                   {issue.assigneeCount} assignees
                 </span>
-                <span className="rounded-sm border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-300">
-                  0 comments
+                <span className="inline-flex items-center gap-1 rounded-sm border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-300">
+                  <MessageSquare className="h-3 w-3" />
+                  {issue.commentCount} comment{issue.commentCount === 1 ? "" : "s"}
                 </span>
                 {issue.issueType && (
                   <span className="inline-flex items-center gap-1 rounded-sm border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-300">
@@ -234,6 +264,61 @@ export default function IssuePage({
                 View on GitHub
               </a>
             </div>
+
+            <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-5">
+              <div className="mb-4 flex items-center justify-between gap-4">
+                <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-400">
+                  Comments
+                </h2>
+                <a
+                  href={issue.githubUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs font-bold text-emerald-400 hover:text-emerald-300"
+                >
+                  View all on GitHub
+                </a>
+              </div>
+
+              {comments.length > 0 ? (
+                <div className="space-y-3">
+                  {comments.map((comment) => (
+                    <article key={comment.id} className="rounded-sm border border-zinc-900 bg-zinc-900/60 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <a
+                          href={comment.author?.githubUrl ?? comment.githubUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-sm font-bold text-zinc-200 hover:text-white"
+                        >
+                          {comment.author?.login ?? "GitHub user"}
+                        </a>
+                        <span className="shrink-0 text-xs font-medium text-zinc-500">
+                          {formatDate(comment.createdAt)}
+                        </span>
+                      </div>
+                      <p className="line-clamp-6 whitespace-pre-wrap text-sm leading-6 text-zinc-400">
+                        {comment.body || "No comment body provided."}
+                      </p>
+                      <a
+                        href={comment.githubUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-3 inline-flex text-xs font-bold text-emerald-400 hover:text-emerald-300"
+                      >
+                        Open comment
+                      </a>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm font-medium text-zinc-500">
+                  {issue.commentCount > 0
+                    ? "Recent comments are unavailable here right now."
+                    : "No comments yet."}
+                </p>
+              )}
+            </div>
           </section>
 
           <aside className="space-y-6">
@@ -252,6 +337,46 @@ export default function IssuePage({
                 </div>
               ) : (
                 <p className="text-sm font-medium text-zinc-500">No match score found.</p>
+              )}
+            </div>
+
+            <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-5">
+              <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-zinc-400">
+                Similar Issues
+              </h2>
+              {similarIssues.length > 0 ? (
+                <div className="space-y-3">
+                  {similarIssues.map((similarIssue) => (
+                    <a
+                      key={similarIssue.id}
+                      href={`/issues/${similarIssue.id}`}
+                      className="block rounded-sm border border-zinc-800 bg-zinc-900 p-3 transition-colors hover:border-zinc-700"
+                    >
+                      <div className="mb-2 flex flex-wrap gap-2">
+                        {similarIssue.issueType && (
+                          <span className="rounded-sm border border-zinc-800 bg-zinc-950 px-1.5 py-0.5 text-[10px] font-bold text-zinc-400">
+                            {titleCase(similarIssue.issueType)}
+                          </span>
+                        )}
+                        {similarIssue.difficulty && (
+                          <span className="rounded-sm border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-bold text-sky-300">
+                            {titleCase(similarIssue.difficulty)}
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="line-clamp-2 text-sm font-bold leading-5 text-zinc-200">
+                        {similarIssue.title}
+                      </h3>
+                      {similarIssue.aiSummary && (
+                        <p className="mt-2 line-clamp-2 text-xs leading-5 text-zinc-500">
+                          {similarIssue.aiSummary}
+                        </p>
+                      )}
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm font-medium text-zinc-500">No similar issues found.</p>
               )}
             </div>
 
@@ -303,6 +428,7 @@ export default function IssuePage({
           </aside>
         </div>
       </div>
-    </main>
+    </section>
+    </AppShell>
   );
 }

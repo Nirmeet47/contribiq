@@ -1,15 +1,15 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowDown,
   Clock,
-  ExternalLink,
   GitPullRequest,
   Loader2,
   Send,
   Star,
 } from "lucide-react";
+import Link from "next/link";
 import { FormEvent, use, useState } from "react";
 import {
   Cell,
@@ -49,11 +49,6 @@ type ProjectResponse = {
   openIssues: ProjectIssue[];
 };
 
-type AskResponse = {
-  answer: string;
-  sourceChunks: string[];
-};
-
 const ISSUE_META: Record<IssueType, { label: string; color: string }> = {
   bug: { label: "Bug", color: "#f87171" },
   feature: { label: "Feature", color: "#34d399" },
@@ -81,14 +76,30 @@ async function fetchProject(repoId: string) {
   return (await response.json()) as ProjectResponse;
 }
 
-async function askProject(repoId: string, query: string) {
+async function streamProjectAnswer(
+  repoId: string,
+  query: string,
+  onToken: (token: string) => void
+) {
   const response = await fetch(`/api/projects/${repoId}/ask`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query }),
   });
   if (!response.ok) throw new Error("Failed to ask project docs");
-  return (await response.json()) as AskResponse;
+  if (!response.body) throw new Error("Project docs response did not stream");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    onToken(decoder.decode(value, { stream: true }));
+  }
+
+  const remainder = decoder.decode();
+  if (remainder) onToken(remainder);
 }
 
 function MetricBar({ label, value }: { label: string; value: number }) {
@@ -116,15 +127,12 @@ function IssueCard({ issue }: { issue: ProjectIssue }) {
             {issue.difficulty && <span>{titleCase(issue.difficulty)}</span>}
             {issue.issueType && <span>{titleCase(issue.issueType)}</span>}
           </div>
-          <a
-            href={issue.githubUrl}
-            target="_blank"
-            rel="noreferrer"
+          <Link
+            href={`/issues/${issue.id}`}
             className="group inline-flex items-start gap-2 text-base font-bold leading-6 text-zinc-100 hover:text-white"
           >
             {issue.title}
-            <ExternalLink className="mt-1 h-3.5 w-3.5 shrink-0 text-zinc-600 transition-colors group-hover:text-zinc-300" />
-          </a>
+          </Link>
         </div>
       </div>
 
@@ -170,16 +178,13 @@ export default function ProjectPage({
 }) {
   const { repoId } = use(params);
   const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState<AskResponse | null>(null);
+  const [answer, setAnswer] = useState("");
+  const [isAsking, setIsAsking] = useState(false);
+  const [askError, setAskError] = useState(false);
 
   const projectQuery = useQuery({
     queryKey: ["project", repoId],
     queryFn: () => fetchProject(repoId),
-  });
-
-  const askMutation = useMutation({
-    mutationFn: (query: string) => askProject(repoId, query),
-    onSuccess: (data) => setAnswer(data),
   });
 
   const project = projectQuery.data;
@@ -193,16 +198,32 @@ export default function ProjectPage({
         }))
     : [];
 
+  async function askDocs(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed || isAsking) return;
+
+    setAnswer("");
+    setAskError(false);
+    setIsAsking(true);
+    try {
+      await streamProjectAnswer(repoId, trimmed, (token) => {
+        setAnswer((current) => current + token);
+      });
+    } catch {
+      setAskError(true);
+    } finally {
+      setIsAsking(false);
+    }
+  }
+
   function submitQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const trimmed = question.trim();
-    if (!trimmed) return;
-    askMutation.mutate(trimmed);
+    askDocs(question);
   }
 
   function askSuggested(value: string) {
     setQuestion(value);
-    askMutation.mutate(value);
+    askDocs(value);
   }
 
   if (projectQuery.isLoading) {
@@ -345,7 +366,7 @@ export default function ProjectPage({
                 key={suggestion}
                 type="button"
                 onClick={() => askSuggested(suggestion)}
-                disabled={askMutation.isPending}
+                disabled={isAsking}
                 className="rounded-sm border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-xs font-bold text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white disabled:opacity-50"
               >
                 {suggestion}
@@ -362,15 +383,15 @@ export default function ProjectPage({
             />
             <button
               type="submit"
-              disabled={askMutation.isPending || question.trim().length === 0}
+              disabled={isAsking || question.trim().length === 0}
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-sm bg-emerald-500 px-4 text-sm font-bold text-zinc-950 transition-colors hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
             >
-              {askMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {isAsking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               Ask
             </button>
           </form>
 
-          {askMutation.isError && (
+          {askError && (
             <div className="mt-4 rounded-sm border border-red-500/30 bg-red-500/10 p-4 text-sm font-medium text-red-300">
               The docs answer could not be loaded.
             </div>
@@ -378,7 +399,7 @@ export default function ProjectPage({
 
           {answer && (
             <div className="mt-5 rounded-sm border border-emerald-500/20 bg-emerald-500/10 p-4">
-              <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">{answer.answer}</p>
+              <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">{answer}</p>
               <p className="mt-3 border-t border-emerald-500/20 pt-3 text-xs font-bold uppercase tracking-wider text-emerald-300">
                 Answer based on project docs
               </p>

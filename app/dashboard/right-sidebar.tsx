@@ -5,14 +5,18 @@ import { Bookmark, Flame, GitFork, GitPullRequest } from "lucide-react";
 import {
   PolarAngleAxis,
   PolarGrid,
+  PolarRadiusAxis,
   Radar,
   RadarChart,
   ResponsiveContainer,
 } from "recharts";
 
+type SkillLevel = "strong" | "moderate" | "learning";
+
 type Skill = {
   id?: string;
   name: string;
+  level: SkillLevel;
   confidence: number;
 };
 
@@ -24,6 +28,11 @@ type MeResponse = {
 
 type BookmarksResponse = {
   count: number;
+};
+
+type ContributionStatsResponse = {
+  totalPRs: number;
+  longestStreak: number;
 };
 
 async function fetchMe() {
@@ -38,11 +47,27 @@ async function fetchBookmarks() {
   return (await response.json()) as BookmarksResponse;
 }
 
+async function fetchContributionStats() {
+  const response = await fetch("/api/contributions/stats");
+  if (!response.ok) throw new Error("Failed to load contribution stats");
+  return (await response.json()) as ContributionStatsResponse;
+}
+
 const TRENDING_REPOS = [
   { name: "vercel/next.js", meta: "React framework", stars: "132k" },
   { name: "supabase/supabase", meta: "Backend platform", stars: "89k" },
   { name: "prisma/prisma", meta: "Database toolkit", stars: "44k" },
 ];
+
+const LEVEL_STYLES: Record<SkillLevel, string> = {
+  strong: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+  moderate: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+  learning: "border-sky-500/30 bg-sky-500/10 text-sky-300",
+};
+
+function titleCase(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
 
 export function RightSidebar() {
   const meQuery = useQuery({ queryKey: ["me"], queryFn: fetchMe });
@@ -50,12 +75,17 @@ export function RightSidebar() {
     queryKey: ["bookmarks"],
     queryFn: fetchBookmarks,
   });
+  const contributionStatsQuery = useQuery({
+    queryKey: ["contributions-stats"],
+    queryFn: fetchContributionStats,
+  });
 
   const topSkills = (meQuery.data?.skillProfile?.skills ?? [])
     .toSorted((a, b) => b.confidence - a.confidence)
     .slice(0, 6)
     .map((skill) => ({
       skill: skill.name,
+      level: skill.level,
       confidence: Math.round(skill.confidence * 100),
     }));
 
@@ -80,6 +110,7 @@ export function RightSidebar() {
             <ResponsiveContainer width="100%" height={250}>
               <RadarChart data={chartData} outerRadius="70%">
                 <PolarGrid stroke="#3f3f46" />
+                <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
                 <PolarAngleAxis
                   dataKey="skill"
                   tick={{ fill: "#a1a1aa", fontSize: 11, fontWeight: 600 }}
@@ -93,6 +124,18 @@ export function RightSidebar() {
               </RadarChart>
             </ResponsiveContainer>
           </div>
+          {topSkills.length > 0 && (
+            <div className="space-y-2">
+              {topSkills.map((skill) => (
+                <div key={skill.skill} className="flex items-center justify-between gap-3 text-xs">
+                  <p className="min-w-0 truncate font-bold text-zinc-200">{skill.skill}</p>
+                  <span className={`shrink-0 rounded-sm border px-1.5 py-0.5 text-[10px] font-bold ${LEVEL_STYLES[skill.level]}`}>
+                    {titleCase(skill.level)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="grid grid-cols-3 gap-2">
@@ -102,8 +145,16 @@ export function RightSidebar() {
               value: bookmarksQuery.data?.count ?? 0,
               icon: Bookmark,
             },
-            { label: "PRs Merged", value: 0, icon: GitPullRequest },
-            { label: "Streak", value: 0, icon: Flame },
+            {
+              label: "PRs Merged",
+              value: contributionStatsQuery.data?.totalPRs ?? 0,
+              icon: GitPullRequest,
+            },
+            {
+              label: "Streak",
+              value: contributionStatsQuery.data?.longestStreak ?? 0,
+              icon: Flame,
+            },
           ].map((stat) => {
             const Icon = stat.icon;
             return (

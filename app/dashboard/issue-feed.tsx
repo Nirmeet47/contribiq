@@ -5,10 +5,10 @@ import {
   Bookmark,
   BookmarkCheck,
   Clock,
-  ExternalLink,
   GitPullRequest,
   ThumbsDown,
 } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 type Difficulty = "beginner" | "intermediate" | "advanced";
@@ -29,6 +29,7 @@ type FeedMatch = {
     requiredSkills: string[];
     bookmarked: boolean;
     repo: {
+      id: string;
       owner: string;
       name: string;
       fullName: string;
@@ -181,15 +182,12 @@ function IssueCard({ match }: { match: FeedMatch }) {
               <span>{match.issue.repo.fullName}</span>
               {match.issue.repo.language && <span>{match.issue.repo.language}</span>}
             </div>
-            <a
-              href={match.issue.githubUrl}
-              target="_blank"
-              rel="noreferrer"
+            <Link
+              href={`/issues/${match.issue.id}`}
               className="group inline-flex items-start gap-2 text-base font-bold leading-6 text-zinc-100 hover:text-white"
             >
               {match.issue.title}
-              <ExternalLink className="mt-1 h-3.5 w-3.5 shrink-0 text-zinc-600 transition-colors group-hover:text-zinc-300" />
-            </a>
+            </Link>
           </div>
         </div>
         <span className={`shrink-0 rounded-sm border px-2.5 py-1 text-xs font-bold ${scoreTone(match.score)}`}>
@@ -234,6 +232,12 @@ function IssueCard({ match }: { match: FeedMatch }) {
               {skill}
             </span>
           ))}
+          <Link
+            href={`/projects/${match.issue.repo.id}`}
+            className="rounded-sm border border-zinc-800 bg-zinc-900 px-2 py-1 text-[11px] font-bold text-emerald-400 transition-colors hover:border-zinc-700 hover:text-emerald-300"
+          >
+            View Project
+          </Link>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button

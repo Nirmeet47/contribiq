@@ -1,0 +1,1 @@
+ALTER TABLE "issues" ADD COLUMN "commentCount" INTEGER NOT NULL DEFAULT 0;

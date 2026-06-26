@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react"
 import { createClient } from "@/utils/supabase/client"
 import type { User as SupabaseUser } from "@supabase/supabase-js"
+import { AppShell } from "@/app/app-shell"
 import { IssueFeed } from "./issue-feed"
 import { RightSidebar } from "./right-sidebar"
 import {
@@ -10,7 +11,6 @@ import {
   CheckCircle2, Loader2, XCircle, GitMerge, Brain, Fingerprint,
   ArrowRight, GripVertical, Pencil, Plus, Save, X, FolderGit2,
   Server, Container, TestTube2, Wrench, Smartphone, Clock,
-  LayoutDashboard, Inbox, Settings
 } from "lucide-react"
 
 // -- Types --
@@ -370,7 +370,7 @@ export default function DashboardPage() {
               >
                 {editMode && <GripVertical className="h-3 w-3 opacity-50" />}
                 {skill.name}
-                {!editMode && <span className="text-[10px] opacity-60">{Math.round(skill.confidence * 100)}%</span>}
+                {!editMode && <span className="text-[10px] opacity-60">{config.label}</span>}
                 {editMode && (
                   <button onClick={() => setSkills((p) => p.filter((s) => s.name !== skill.name))} className="ml-1 opacity-50 hover:opacity-100 transition-opacity">
                     <X className="h-3 w-3" />
@@ -538,37 +538,8 @@ export default function DashboardPage() {
   const name = dbUser?.name || user?.user_metadata?.full_name || "Developer"
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-50 font-sans selection:bg-emerald-500/30">
-      <div className="flex min-h-screen">
-        <aside className="hidden w-64 border-r border-zinc-900 bg-zinc-950 p-5 md:block">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center bg-white">
-              <Code2 className="h-5 w-5 text-zinc-950" strokeWidth={2.5} />
-            </div>
-            <span className="text-lg font-bold tracking-tight">ContribIQ</span>
-          </div>
-          <div className="mt-8 space-y-2">
-            {[
-              { label: "Dashboard", icon: LayoutDashboard },
-              { label: "Matches", icon: Inbox },
-              { label: "Skills", icon: BookOpen },
-              { label: "Settings", icon: Settings },
-            ].map((item) => {
-              const Icon = item.icon
-              return (
-                <a key={item.label} href="#" className="flex items-center gap-3 rounded-sm px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-white">
-                  <Icon className="h-4 w-4" />
-                  {item.label}
-                </a>
-              )
-            })}
-          </div>
-          <button onClick={handleLogout} className="mt-8 flex w-full items-center gap-2 rounded-sm border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-800 hover:text-white">
-            <LogOut className="h-4 w-4" /> Sign Out
-          </button>
-        </aside>
-
-        <section className="flex-1 p-6 sm:p-8">
+    <AppShell>
+        <section className="p-6 sm:p-8">
           <div className="mb-8 flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-zinc-500">Welcome back</p>
@@ -586,7 +557,6 @@ export default function DashboardPage() {
             <RightSidebar />
           </div>
         </section>
-      </div>
 
       <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -594,6 +564,6 @@ export default function DashboardPage() {
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #27272a; border-radius: 2px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
       `}</style>
-    </main>
+    </AppShell>
   )
 }

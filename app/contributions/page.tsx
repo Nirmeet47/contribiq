@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { AppShell } from "@/app/app-shell";
 import { GitPullRequest } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -177,7 +178,7 @@ export default function ContributionsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-50 selection:bg-emerald-500/30">
+    <AppShell>
       <div className="mx-auto max-w-5xl space-y-8 px-6 py-8">
         <section>
           {statsQuery.isLoading ? (
@@ -334,6 +335,6 @@ export default function ContributionsPage() {
           </button>
         </section>
       </div>
-    </main>
+    </AppShell>
   );
 }

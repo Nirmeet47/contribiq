@@ -15,6 +15,7 @@ import logging
 from typing import AsyncGenerator
 
 import psycopg2
+import redis
 from groq import Groq
 from google import genai
 from pydantic import BaseModel, field_validator
@@ -94,6 +95,16 @@ Rules:
 - If two packages map to the same skill (e.g. both "pg" and "postgres"), merge them
   into one skill entry with the higher repoCount."""
 
+SYSTEM_PROMPT += """
+
+Important matching rule:
+- Always include the developer's primary programming languages as skill entries
+  alongside framework/tool skills. Include languages such as TypeScript,
+  JavaScript, Python, Rust, Swift, Go, Java, Kotlin, C++, C#, Ruby, PHP, and Dart
+  whenever the GitHub data shows meaningful usage. Do this even when framework
+  context is also present, because issue requiredSkills often include raw
+  language names and language-level matching is required."""
+
 
 def _get_db_connection():
     return psycopg2.connect(os.environ["DATABASE_URL"])
@@ -170,6 +181,129 @@ def _build_skill_summary(skills: list[ParsedSkill]) -> str:
         parts.append(f"Learning: {', '.join(grouped['learning'])}")
 
     return ". ".join(parts) + "."
+
+
+def _score_matches_for_user(user_id: str) -> int:
+    conn = _get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute(
+            """
+            WITH user_vectors AS (
+                SELECT
+                    u.id AS user_id,
+                    u.interests,
+                    se.embedding AS skill_embedding,
+                    COALESCE(AVG(s.confidence), 0.5) AS avg_confidence
+                FROM users u
+                JOIN skill_profiles sp ON sp."userId" = u.id
+                JOIN skill_embeddings se ON se.skill_profile_id = sp.id
+                LEFT JOIN skills s ON s."skillProfileId" = sp.id
+                WHERE u.onboarded = true
+                  AND u.id = %s
+                GROUP BY u.id, u.interests, se.embedding
+            ),
+            scored AS (
+                SELECT
+                    uv.user_id,
+                    ie.issue_id,
+                    GREATEST(0, LEAST(1, 1 - (uv.skill_embedding <=> ie.embedding))) AS skill_sim,
+                    CASE
+                        WHEN COALESCE(array_length(uv.interests, 1), 0) = 0
+                          OR COALESCE(array_length(r.categories, 1), 0) = 0
+                        THEN 0
+                        ELSE LEAST(
+                            1,
+                            (
+                                SELECT COUNT(*)::float
+                                FROM unnest(uv.interests) AS user_interest
+                                JOIN unnest(r.categories) AS repo_category
+                                  ON lower(user_interest) = lower(repo_category)
+                                  OR (
+                                      lower(user_interest) = 'ai_ml'
+                                      AND lower(repo_category) IN ('ai', 'ml', 'ai/ml', 'machine-learning', 'machine learning')
+                                  )
+                            ) / GREATEST(array_length(uv.interests, 1), 1)
+                        )
+                    END AS interest_sim,
+                    CASE
+                        WHEN uv.avg_confidence >= 0.75 THEN
+                            CASE i.difficulty
+                                WHEN 'advanced'::"Difficulty" THEN 1.0
+                                WHEN 'intermediate'::"Difficulty" THEN 0.85
+                                ELSE 0.65
+                            END
+                        WHEN uv.avg_confidence >= 0.45 THEN
+                            CASE i.difficulty
+                                WHEN 'intermediate'::"Difficulty" THEN 1.0
+                                WHEN 'beginner'::"Difficulty" THEN 0.85
+                                ELSE 0.65
+                            END
+                        ELSE
+                            CASE i.difficulty
+                                WHEN 'beginner'::"Difficulty" THEN 1.0
+                                WHEN 'intermediate'::"Difficulty" THEN 0.75
+                                ELSE 0.45
+                            END
+                    END AS diff_score
+                FROM user_vectors uv
+                CROSS JOIN issue_embeddings ie
+                JOIN issues i ON i.id = ie.issue_id
+                JOIN repos r ON r.id = i."repoId"
+                WHERE i.classified = true
+                  AND i.state = 'open'::"IssueState"
+                  AND i.difficulty IS NOT NULL
+            )
+            INSERT INTO issue_matches (
+                id, "userId", "issueId", score,
+                "skillSim", "interestSim", "diffScore",
+                "createdAt", "updatedAt"
+            )
+            SELECT
+                gen_random_uuid()::text,
+                user_id,
+                issue_id,
+                (skill_sim * 0.7) + (interest_sim * 0.2) + (diff_score * 0.1),
+                skill_sim,
+                interest_sim,
+                diff_score,
+                now(),
+                now()
+            FROM scored
+            ON CONFLICT ("userId", "issueId")
+            DO UPDATE SET
+                score = EXCLUDED.score,
+                "skillSim" = EXCLUDED."skillSim",
+                "interestSim" = EXCLUDED."interestSim",
+                "diffScore" = EXCLUDED."diffScore",
+                "updatedAt" = now()
+            """,
+            (user_id,),
+        )
+        upserted = cur.rowcount
+        conn.commit()
+        return upserted
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
+
+
+def _clear_feed_cache(user_id: str) -> None:
+    redis_url = os.environ.get("REDIS_URL")
+    if not redis_url:
+        return
+
+    client = redis.Redis.from_url(redis_url, decode_responses=True)
+    try:
+        keys = client.keys(f"feed:{user_id}:*")
+        if keys:
+            client.delete(*keys)
+    finally:
+        client.close()
 
 
 async def run_skill_profiler(
@@ -316,7 +450,17 @@ async def run_skill_profiler(
         cur.close()
         conn.close()
 
+    yield {"step": "embedding", "message": "Scoring your issue matches..."}
+    matched_count = _score_matches_for_user(user_id)
+    _clear_feed_cache(user_id)
+
     yield {
         "step": "done",
-        "message": f"Profile ready — {len(skills)} skills identified from your actual dependencies!",
+        "message": f"Profile ready - {len(skills)} skills identified and {matched_count} matches scored!",
+        "summary": {
+            "totalCommits": github_data["total_commits"],
+            "totalRepos": len(github_data["repos"]),
+            "mergedPRs": github_data["merged_prs"],
+        },
     }
+    return

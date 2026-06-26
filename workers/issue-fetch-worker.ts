@@ -16,6 +16,7 @@ type GitHubIssueNode = {
   url: string;
   state: "OPEN" | "CLOSED";
   assignees: { totalCount: number };
+  comments: { totalCount: number };
   labels: { nodes: Array<{ name: string }> };
 };
 
@@ -46,6 +47,9 @@ const fetchIssuesQuery = `
           url
           state
           assignees {
+            totalCount
+          }
+          comments {
             totalCount
           }
           labels(first: 20) {
@@ -140,6 +144,7 @@ export const issueFetchWorker = new Worker(
               labels: issue.labels.nodes.map((label) => label.name),
               state: "open",
               assigneeCount: issue.assignees.totalCount,
+              commentCount: issue.comments.totalCount,
               githubUrl: issue.url,
             },
           });
@@ -155,6 +160,7 @@ export const issueFetchWorker = new Worker(
             labels: issue.labels.nodes.map((label) => label.name),
             state: "open",
             assigneeCount: issue.assignees.totalCount,
+            commentCount: issue.comments.totalCount,
             githubUrl: issue.url,
             classified: false,
           },

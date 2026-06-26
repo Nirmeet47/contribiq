@@ -5,6 +5,20 @@ import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
 
+const GITHUB_REST_URL = "https://api.github.com";
+
+type GitHubComment = {
+  id: number;
+  html_url: string;
+  body: string | null;
+  created_at: string;
+  user: {
+    login: string;
+    avatar_url: string;
+    html_url: string;
+  } | null;
+};
+
 async function getDbUser() {
   const supabase = await createClient();
   const {
@@ -21,6 +35,47 @@ async function getDbUser() {
     where: { githubId: parseInt(githubIdStr, 10) },
     select: { id: true },
   });
+}
+
+function issueNumberFromUrl(url: string) {
+  const match = url.match(/\/issues\/(\d+)(?:$|[?#])/);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+async function fetchIssueComments(owner: string, repo: string, issueUrl: string) {
+  const issueNumber = issueNumberFromUrl(issueUrl);
+  const token = process.env.GITHUB_PAT;
+
+  if (!issueNumber || !token) return [];
+
+  const response = await fetch(
+    `${GITHUB_REST_URL}/repos/${owner}/${repo}/issues/${issueNumber}/comments?per_page=20`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+      },
+      next: { revalidate: 300 },
+    }
+  );
+
+  if (!response.ok) return [];
+
+  const comments = (await response.json()) as GitHubComment[];
+
+  return comments.map((comment) => ({
+    id: comment.id,
+    body: comment.body,
+    createdAt: comment.created_at,
+    githubUrl: comment.html_url,
+    author: comment.user
+      ? {
+          login: comment.user.login,
+          avatarUrl: comment.user.avatar_url,
+          githubUrl: comment.user.html_url,
+        }
+      : null,
+  }));
 }
 
 export async function GET(
@@ -49,6 +104,7 @@ export async function GET(
       labels: true,
       state: true,
       assigneeCount: true,
+      commentCount: true,
       githubUrl: true,
       aiSummary: true,
       difficulty: true,
@@ -110,10 +166,17 @@ export async function GET(
     }),
   ]);
 
+  const comments = await fetchIssueComments(
+    issue.repo.owner,
+    issue.repo.name,
+    issue.githubUrl
+  );
+
   const payload = {
     issue,
     match,
     similarIssues,
+    comments,
     workersCount,
     isWorking: Boolean(workingOn),
   };

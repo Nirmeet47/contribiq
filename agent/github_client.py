@@ -362,8 +362,14 @@ async def get_github_data(user_id: str, token: str) -> GitHubData:
                 dependencies=deps,
             ))
 
-        # rough commit estimate — exact per-repo counts would cost too many api calls
-        total_commits = len(repos_data) * 15
+        # Replace the hardcoded estimate at the bottom of get_github_data:
+        commit_resp = await client.get(
+            f"{GITHUB_API}/search/commits",
+            params={"q": f"author:{username}", "per_page": 1},
+            headers={**headers, "Accept": "application/vnd.github.cloak-preview+json"},
+        )
+        redis_client.incr(rate_key)
+        total_commits = commit_resp.json().get("total_count", 0) if commit_resp.status_code == 200 else len(repos_data) * 15
 
         return GitHubData(
             repos=repos,

@@ -11,6 +11,7 @@ model Issue {
   labels        String[]
   state         IssueState @default(open)
   assigneeCount Int        @default(0)
+  commentCount  Int        @default(0)
   githubUrl     String
   classified    Boolean    @default(false)
 
