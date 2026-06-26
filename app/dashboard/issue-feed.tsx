@@ -61,6 +61,64 @@ function maintainerLabel(score: number) {
   return "Emerging";
 }
 
+function responsivenessTone(score: number) {
+  if (score >= 0.7) {
+    return {
+      label: "⚡ Fast · ~1-2 days",
+      className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+    };
+  }
+  if (score >= 0.4) {
+    return {
+      label: "🕐 Moderate · ~1 week",
+      className: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+    };
+  }
+  return {
+    label: "🐢 Slow · 2+ weeks",
+    className: "border-zinc-700 bg-zinc-900 text-zinc-300",
+  };
+}
+
+function SkeletonCard() {
+  return (
+    <div className="animate-pulse rounded-sm border border-zinc-800 bg-zinc-950 p-5">
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <div className="h-10 w-10 shrink-0 rounded-sm bg-zinc-800" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="h-3 w-40 rounded-sm bg-zinc-800" />
+            <div className="h-5 w-3/4 rounded-sm bg-zinc-800" />
+          </div>
+        </div>
+        <div className="h-7 w-14 rounded-sm bg-zinc-800" />
+      </div>
+      <div className="mb-4 space-y-2">
+        <div className="h-3 w-full rounded-sm bg-zinc-800" />
+        <div className="h-3 w-11/12 rounded-sm bg-zinc-800" />
+        <div className="h-3 w-2/3 rounded-sm bg-zinc-800" />
+      </div>
+      <div className="mb-5 flex flex-wrap gap-2">
+        <div className="h-7 w-20 rounded-sm bg-zinc-800" />
+        <div className="h-7 w-14 rounded-sm bg-zinc-800" />
+        <div className="h-7 w-24 rounded-sm bg-zinc-800" />
+        <div className="h-7 w-36 rounded-sm bg-zinc-800" />
+      </div>
+      <div className="flex items-center justify-between gap-3 border-t border-zinc-900 pt-4">
+        <div className="flex gap-2">
+          <div className="h-6 w-16 rounded-sm bg-zinc-800" />
+          <div className="h-6 w-20 rounded-sm bg-zinc-800" />
+          <div className="h-6 w-14 rounded-sm bg-zinc-800" />
+        </div>
+        <div className="flex gap-2">
+          <div className="h-9 w-9 rounded-sm bg-zinc-800" />
+          <div className="h-9 w-9 rounded-sm bg-zinc-800" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 async function fetchFeed({
   difficulty,
   issueType,
@@ -83,6 +141,7 @@ function IssueCard({ match }: { match: FeedMatch }) {
   const queryClient = useQueryClient();
   const percent = Math.round(match.score * 100);
   const logoUrl = `https://github.com/${match.issue.repo.owner}.png`;
+  const responsiveness = responsivenessTone(match.issue.repo.maintainerScore);
 
   const bookmarkMutation = useMutation({
     mutationFn: async () => {
@@ -160,6 +219,9 @@ function IssueCard({ match }: { match: FeedMatch }) {
             {titleCase(match.issue.issueType)}
           </span>
         )}
+        <span className={`rounded-sm border px-2 py-1 text-xs font-medium ${responsiveness.className}`}>
+          {responsiveness.label}
+        </span>
         <span className="rounded-sm border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-300">
           {maintainerLabel(match.issue.repo.maintainerScore)}
         </span>
@@ -269,13 +331,7 @@ export function IssueFeed() {
       {feedQuery.isLoading && (
         <div className="space-y-4">
           {[1, 2, 3].map((item) => (
-            <div key={item} className="animate-pulse rounded-sm border border-zinc-800 bg-zinc-950 p-5">
-              <div className="mb-4 h-5 w-2/3 rounded-sm bg-zinc-800" />
-              <div className="space-y-2">
-                <div className="h-3 w-full rounded-sm bg-zinc-900" />
-                <div className="h-3 w-3/4 rounded-sm bg-zinc-900" />
-              </div>
-            </div>
+            <SkeletonCard key={item} />
           ))}
         </div>
       )}

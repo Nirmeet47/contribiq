@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react"
 import { createClient } from "@/utils/supabase/client"
 import type { User as SupabaseUser } from "@supabase/supabase-js"
 import { IssueFeed } from "./issue-feed"
+import { RightSidebar } from "./right-sidebar"
 import {
   LogOut, Code2, GitPullRequest, BookOpen,
   CheckCircle2, Loader2, XCircle, GitMerge, Brain, Fingerprint,
@@ -567,7 +568,7 @@ export default function DashboardPage() {
           </button>
         </aside>
 
-        <section className="flex-1 border-r border-zinc-900 p-6 sm:p-8">
+        <section className="flex-1 p-6 sm:p-8">
           <div className="mb-8 flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-zinc-500">Welcome back</p>
@@ -578,10 +579,13 @@ export default function DashboardPage() {
             </button>
           </div>
 
-          <IssueFeed />
+          <div className="grid gap-6 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              <IssueFeed />
+            </div>
+            <RightSidebar />
+          </div>
         </section>
-
-        <aside className="hidden w-80 bg-zinc-950 p-6 lg:block" />
       </div>
 
       <style jsx global>{`

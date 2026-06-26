@@ -30,6 +30,19 @@ async function getDbUserId() {
   return dbUser?.id ?? null;
 }
 
+export async function GET() {
+  const userId = await getDbUserId();
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const count = await prisma.bookmark.count({
+    where: { userId },
+  });
+
+  return NextResponse.json({ count });
+}
+
 export async function POST(request: Request) {
   const userId = await getDbUserId();
   if (!userId) {
