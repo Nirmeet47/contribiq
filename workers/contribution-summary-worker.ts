@@ -1,0 +1,237 @@
+import "dotenv/config";
+
+import { Worker, type ConnectionOptions } from "bullmq";
+import { z } from "zod";
+import { embed } from "@/lib/embeddings";
+import { groq, GROQ_MODEL } from "@/lib/groq";
+import { prisma } from "@/lib/prisma";
+import { redis } from "@/lib/redis";
+
+const connection = redis as unknown as ConnectionOptions;
+
+const contributionJobSchema = z.object({
+  contributionId: z.string().min(1),
+});
+
+const diffFileSchema = z.object({
+  filename: z.string(),
+  additions: z.number().int(),
+  deletions: z.number().int(),
+  patch: z.string().optional(),
+});
+
+const contributionSummarySchema = z.object({
+  aiDescription: z.string(),
+  skillsDemonstrated: z.array(z.string()),
+  complexity: z.number().int().min(1).max(5),
+  linesAdded: z.number().int(),
+  linesRemoved: z.number().int(),
+  filesChanged: z.number().int(),
+});
+
+const systemPrompt =
+  "You analyze merged GitHub PRs and extract contribution metadata. Return only strict JSON with keys: aiDescription (string), skillsDemonstrated (string array), complexity (integer 1-5), linesAdded (integer), linesRemoved (integer), filesChanged (integer).";
+
+function githubHeaders() {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    throw new Error("GITHUB_TOKEN is not set");
+  }
+
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+}
+
+async function fetchPrFiles(repoOwner: string, repoName: string, prNumber: number) {
+  const response = await fetch(
+    `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}/files`,
+    { headers: githubHeaders() }
+  );
+
+  if (!response.ok) {
+    throw new Error(`GitHub PR files fetch failed: ${response.status}`);
+  }
+
+  return z.array(diffFileSchema).parse(await response.json());
+}
+
+async function fetchPrBody(repoOwner: string, repoName: string, prNumber: number) {
+  const response = await fetch(
+    `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}`,
+    { headers: githubHeaders() }
+  );
+
+  if (!response.ok) {
+    throw new Error(`GitHub PR fetch failed: ${response.status}`);
+  }
+
+  const payload = (await response.json()) as { body?: string | null };
+  return payload.body ?? "";
+}
+
+function buildUserPrompt(contribution: {
+  prTitle: string;
+  repoOwner: string;
+  repoName: string;
+  prNumber: number;
+}, prBody: string, diffFiles: Array<z.infer<typeof diffFileSchema>>) {
+  return JSON.stringify({
+    title: contribution.prTitle,
+    description: prBody,
+    files: diffFiles.map((file) => ({
+      filename: file.filename,
+      additions: file.additions,
+      deletions: file.deletions,
+      patch: (file.patch ?? "").slice(0, 500),
+    })),
+  });
+}
+
+function toVectorLiteral(values: number[]) {
+  return `[${values.join(",")}]`;
+}
+
+export const contributionSummaryWorker = new Worker(
+  "contribution-summary",
+  async (job) => {
+    const { contributionId } = contributionJobSchema.parse(job.data);
+    const contribution = await prisma.contribution.findUnique({
+      where: { id: contributionId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            skillProfile: {
+              select: {
+                id: true,
+                skills: {
+                  select: {
+                    id: true,
+                    name: true,
+                    level: true,
+                    confidence: true,
+                    repoCount: true,
+                    commitCount: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!contribution) {
+      throw new Error(`Contribution not found: ${contributionId}`);
+    }
+
+    const skillProfile = contribution.user.skillProfile;
+    if (!skillProfile) {
+      throw new Error(`User has no skill profile: ${contribution.userId}`);
+    }
+
+    const [diffFiles, prBody] = await Promise.all([
+      fetchPrFiles(contribution.repoOwner, contribution.repoName, contribution.prNumber),
+      fetchPrBody(contribution.repoOwner, contribution.repoName, contribution.prNumber),
+    ]);
+
+    const completion = await groq.chat.completions.create({
+      model: GROQ_MODEL,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: buildUserPrompt(contribution, prBody, diffFiles) },
+      ],
+      temperature: 0.1,
+    });
+
+    const content = completion.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error(`Groq returned an empty contribution summary for ${contributionId}`);
+    }
+
+    const summary = contributionSummarySchema.parse(JSON.parse(content));
+    const existingSkillNames = new Set(
+      skillProfile.skills.map((skill) => skill.name.toLowerCase())
+    );
+
+    await prisma.$transaction(async (tx) => {
+      await tx.contribution.update({
+        where: { id: contribution.id },
+        data: {
+          aiDescription: summary.aiDescription,
+          skillsDemonstrated: summary.skillsDemonstrated,
+          complexity: summary.complexity,
+          linesAdded: summary.linesAdded,
+          linesRemoved: summary.linesRemoved,
+          filesChanged: summary.filesChanged,
+          processed: true,
+        },
+      });
+
+      for (const skillName of summary.skillsDemonstrated) {
+        const normalizedName = skillName.trim();
+        if (!normalizedName || existingSkillNames.has(normalizedName.toLowerCase())) {
+          continue;
+        }
+
+        await tx.skill.upsert({
+          where: {
+            skillProfileId_name: {
+              skillProfileId: skillProfile.id,
+              name: normalizedName,
+            },
+          },
+          update: {},
+          create: {
+            skillProfileId: skillProfile.id,
+            name: normalizedName,
+            level: "learning",
+            confidence: 0.4,
+          },
+        });
+
+        existingSkillNames.add(normalizedName.toLowerCase());
+      }
+
+      const allSkills = await tx.skill.findMany({
+        where: { skillProfileId: skillProfile.id },
+        orderBy: { name: "asc" },
+        select: {
+          name: true,
+          level: true,
+          confidence: true,
+          repoCount: true,
+          commitCount: true,
+        },
+      });
+
+      const vector = toVectorLiteral(await embed(allSkills.map((skill) => skill.name).join(" ")));
+
+      await tx.$executeRaw`
+        INSERT INTO skill_embeddings (skill_profile_id, embedding, updated_at)
+        VALUES (${skillProfile.id}, ${vector}::vector, now())
+        ON CONFLICT (skill_profile_id)
+        DO UPDATE SET embedding = EXCLUDED.embedding, updated_at = now()
+      `;
+
+      await tx.skillSnapshot.create({
+        data: {
+          userId: contribution.userId,
+          snapshot: allSkills,
+        },
+      });
+    });
+
+    const feedKeys = await redis.keys(`feed:${contribution.userId}:*`);
+    if (feedKeys.length > 0) {
+      await redis.del(...feedKeys);
+    }
+
+    return { contributionId: contribution.id, processed: true };
+  },
+  { connection }
+);

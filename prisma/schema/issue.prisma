@@ -28,6 +28,7 @@ model Issue {
   matches        IssueMatch[]
   bookmarks      Bookmark[]
   feedback       IssueFeedback[]
+  workingOn      WorkingOn[]
   issueEmbedding IssueEmbedding?
 
   @@unique([githubId, repoId])

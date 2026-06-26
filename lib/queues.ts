@@ -18,4 +18,6 @@ export const issueClassificationQueue = new Queue("issue-classification", {
 export const matchScoringQueue = new Queue("match-scoring", { connection });
 
 // triggered by the github webhook when a PR is merged
-export const contributionQueue = new Queue("contribution", { connection });
+export const contributionQueue = new Queue("contribution-summary", {
+  connection,
+});
