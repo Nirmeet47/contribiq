@@ -234,7 +234,7 @@ function IssueCard({ match }: { match: FeedMatch }) {
           ))}
           <Link
             href={`/projects/${match.issue.repo.id}`}
-            className="rounded-sm border border-zinc-800 bg-zinc-900 px-2 py-1 text-[11px] font-bold text-emerald-400 transition-colors hover:border-zinc-700 hover:text-emerald-300"
+            className="inline-flex items-center justify-center rounded-sm bg-emerald-500 px-4 py-2 text-sm font-bold text-zinc-950 shadow-sm shadow-emerald-950/40 transition-colors hover:bg-emerald-400"
           >
             View Project
           </Link>

@@ -3,9 +3,12 @@
 // vector embeddings live in skill_embeddings so normal SkillProfile queries stay typed
 
 model SkillProfile {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  totalCommits Int      @default(0)
+  totalRepos   Int      @default(0)
+  mergedPRs    Int      @default(0)
+  updatedAt    DateTime @updatedAt
 
   user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   skills         Skill[]

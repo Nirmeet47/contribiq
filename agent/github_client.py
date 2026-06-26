@@ -42,6 +42,7 @@ GITHUB_API = "https://api.github.com"
 # how many repos to fetch manifests for — we prioritise by most recently updated
 # fetching all 100 would eat ~200 api calls just for manifests
 MAX_REPOS_FOR_MANIFEST = 30
+MAX_REPOS_FOR_COMMIT_STATS = 50
 
 
 class RepoData(TypedDict):
@@ -262,6 +263,83 @@ async def _fetch_manifest(
     return []  # no manifest found
 
 
+async def _fetch_commit_search_count(
+    client: httpx.AsyncClient,
+    username: str,
+    full_name: str,
+    redis_client,
+    rate_key: str,
+) -> int:
+    resp = await client.get(
+        f"{GITHUB_API}/search/commits",
+        params={"q": f"author:{username} repo:{full_name}", "per_page": 1},
+        headers={"Accept": "application/vnd.github.cloak-preview+json"},
+        timeout=20,
+    )
+    redis_client.incr(rate_key)
+
+    if resp.status_code != 200:
+        logger.debug(f"{full_name}: commit search fallback failed with {resp.status_code}")
+        return 0
+
+    return int(resp.json().get("total_count", 0))
+
+
+async def _fetch_owned_repo_commit_count(
+    client: httpx.AsyncClient,
+    repos_data: list[dict],
+    username: str,
+    redis_client,
+    rate_key: str,
+) -> int:
+    owned_repos = [
+        repo
+        for repo in repos_data
+        if repo.get("owner", {}).get("login", "").lower() == username.lower()
+        and not repo.get("fork", False)
+    ][:MAX_REPOS_FOR_COMMIT_STATS]
+
+    total = 0
+
+    for repo in owned_repos:
+        full_name = repo["full_name"]
+        current = redis_client.get(rate_key)
+        if current and int(current) >= RATE_LIMIT_THRESHOLD:
+            logger.warning("rate limit close, stopping commit stats fetch")
+            break
+
+        resp = await client.get(
+            f"{GITHUB_API}/repos/{full_name}/contributors",
+            params={"per_page": 100},
+            timeout=20,
+        )
+        redis_client.incr(rate_key)
+
+        if resp.status_code == 202:
+            total += await _fetch_commit_search_count(
+                client, username, full_name, redis_client, rate_key
+            )
+            continue
+
+        if resp.status_code != 200:
+            logger.debug(f"{full_name}: contributors fetch failed with {resp.status_code}")
+            continue
+
+        contributors = resp.json()
+        match = next(
+            (
+                contributor
+                for contributor in contributors
+                if contributor.get("login", "").lower() == username.lower()
+            ),
+            None,
+        )
+        if match:
+            total += int(match.get("contributions", 0))
+
+    return total
+
+
 async def get_github_data(user_id: str, token: str) -> GitHubData:
     """
     fetches the user's repos + extracts real dependencies from manifest files.
@@ -362,14 +440,9 @@ async def get_github_data(user_id: str, token: str) -> GitHubData:
                 dependencies=deps,
             ))
 
-        # Replace the hardcoded estimate at the bottom of get_github_data:
-        commit_resp = await client.get(
-            f"{GITHUB_API}/search/commits",
-            params={"q": f"author:{username}", "per_page": 1},
-            headers={**headers, "Accept": "application/vnd.github.cloak-preview+json"},
+        total_commits = await _fetch_owned_repo_commit_count(
+            client, repos_data, username, redis_client, rate_key
         )
-        redis_client.incr(rate_key)
-        total_commits = commit_resp.json().get("total_count", 0) if commit_resp.status_code == 200 else len(repos_data) * 15
 
         return GitHubData(
             repos=repos,

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/prisma";
-import type { Skill } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -22,9 +21,14 @@ export async function GET() {
     const githubId = parseInt(githubIdStr, 10);
     const dbUser = await prisma.user.findUnique({
       where: { githubId },
-      include: {
+      select: {
         skillProfile: {
-          include: { skills: true }
+          select: {
+            totalCommits: true,
+            totalRepos: true,
+            mergedPRs: true,
+            skills: true,
+          }
         }
       }
     });
@@ -33,15 +37,13 @@ export async function GET() {
       return NextResponse.json({ skills: [], summary: { totalCommits: 0, totalRepos: 0, mergedPRs: 0 } });
     }
 
-    // Calculate a summary from the skills
-    const skills = dbUser.skillProfile.skills as Skill[];
     const summary = {
-      totalCommits: skills.reduce((acc: number, s) => acc + s.commitCount, 0),
-      totalRepos: Math.max(...skills.map((s) => s.repoCount), 0), // rough estimate
-      mergedPRs: 0 // could be added to schema later
+      totalCommits: dbUser.skillProfile.totalCommits,
+      totalRepos: dbUser.skillProfile.totalRepos,
+      mergedPRs: dbUser.skillProfile.mergedPRs,
     };
 
-    return NextResponse.json({ skills, summary });
+    return NextResponse.json({ skills: dbUser.skillProfile.skills, summary });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

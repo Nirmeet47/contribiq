@@ -26,7 +26,7 @@ The JSON object must contain:
 - estimatedHours: a number
 - requiredSkills: an array of strings
 - issueType: one of "bug", "feature", "docs", "refactor"
-- aiSummary: a concise plain-English summary
+- aiSummary: a 2-3 sentence plain-English summary explaining what the issue is, what's broken or needed, and what kind of change would fix it
 `;
 
 function buildUserPrompt(issue: {

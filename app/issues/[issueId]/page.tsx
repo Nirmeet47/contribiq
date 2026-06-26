@@ -5,6 +5,7 @@ import { AppShell } from "@/app/app-shell";
 import {
   Clock,
   ExternalLink,
+  FolderGit2,
   GitPullRequest,
   Loader2,
   MessageSquare,
@@ -12,6 +13,7 @@ import {
   Tag,
   Users,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import { use } from "react";
 
 type Difficulty = "beginner" | "intermediate" | "advanced";
@@ -250,9 +252,9 @@ export default function IssuePage({
                 )}
               </div>
 
-              <pre className="whitespace-pre-wrap rounded-sm border border-zinc-900 bg-zinc-950 p-4 text-sm leading-6 text-zinc-300">
-                {issue.body || "No issue body provided."}
-              </pre>
+              <div className="prose prose-invert prose-sm max-w-none rounded-sm border border-zinc-900 bg-zinc-950 p-4 text-sm leading-6 text-zinc-300">
+                <ReactMarkdown>{issue.body || "No issue body provided."}</ReactMarkdown>
+              </div>
 
               <a
                 href={issue.githubUrl}
@@ -405,6 +407,13 @@ export default function IssuePage({
                 <p>Responsiveness: {percentage(issue.repo.maintainerScore)}/100</p>
                 <p>Activity: {percentage(issue.repo.activityScore)}/100</p>
               </div>
+              <a
+                href={`/projects/${issue.repo.id}`}
+                className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-sm bg-emerald-500 px-4 text-sm font-bold text-zinc-950 shadow-sm shadow-emerald-950/40 transition-colors hover:bg-emerald-400"
+              >
+                <FolderGit2 className="h-4 w-4" />
+                View Project
+              </a>
             </div>
 
             <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-5">

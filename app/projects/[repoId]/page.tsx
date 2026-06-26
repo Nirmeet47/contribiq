@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { AppShell } from "@/app/app-shell";
 import {
   ArrowDown,
   Clock,
@@ -228,27 +229,31 @@ export default function ProjectPage({
 
   if (projectQuery.isLoading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-50">
+      <AppShell>
+      <section className="flex min-h-screen items-center justify-center text-zinc-50">
         <div className="flex items-center gap-3 text-sm font-medium text-zinc-400">
           <Loader2 className="h-5 w-5 animate-spin text-emerald-400" />
           Loading project...
         </div>
-      </main>
+      </section>
+      </AppShell>
     );
   }
 
   if (projectQuery.isError || !project) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-zinc-950 p-6 text-zinc-50">
+      <AppShell>
+      <section className="flex min-h-screen items-center justify-center p-6 text-zinc-50">
         <div className="rounded-sm border border-red-500/30 bg-red-500/10 p-5 text-sm font-medium text-red-300">
           Project could not be loaded.
         </div>
-      </main>
+      </section>
+      </AppShell>
     );
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-50 selection:bg-emerald-500/30">
+    <AppShell>
       <div className="mx-auto max-w-6xl space-y-8 px-6 py-10 sm:px-8">
         <header className="space-y-6 border-b border-zinc-900 pb-8">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
@@ -422,6 +427,6 @@ export default function ProjectPage({
           )}
         </section>
       </div>
-    </main>
+    </AppShell>
   );
 }

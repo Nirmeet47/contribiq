@@ -113,8 +113,8 @@ export default function DashboardPage() {
     try {
       const r = await fetch("/api/me/skills")
       const data = await r.json()
-      if (data.skills) {
-        setSkills(data.skills)
+      setSkills(data.skills ?? [])
+      if (data.summary) {
         setSummary(data.summary)
       }
     } catch (e) {

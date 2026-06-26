@@ -367,12 +367,23 @@ async def run_skill_profiler(
         # upsert skill_profile
         cur.execute(
             """
-            INSERT INTO skill_profiles (id, "userId", "updatedAt")
-            VALUES (gen_random_uuid()::text, %s, now())
-            ON CONFLICT ("userId") DO UPDATE SET "updatedAt" = now()
+            INSERT INTO skill_profiles (
+                id, "userId", "totalCommits", "totalRepos", "mergedPRs", "updatedAt"
+            )
+            VALUES (gen_random_uuid()::text, %s, %s, %s, %s, now())
+            ON CONFLICT ("userId") DO UPDATE SET
+                "totalCommits" = EXCLUDED."totalCommits",
+                "totalRepos" = EXCLUDED."totalRepos",
+                "mergedPRs" = EXCLUDED."mergedPRs",
+                "updatedAt" = now()
             RETURNING id
             """,
-            (user_id,),
+            (
+                user_id,
+                github_data["total_commits"],
+                len(github_data["repos"]),
+                github_data["merged_prs"],
+            ),
         )
         skill_profile_id = cur.fetchone()[0]
 
