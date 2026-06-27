@@ -21,6 +21,7 @@ from google import genai
 from pydantic import BaseModel, field_validator
 
 from agent.github_client import get_github_data
+from agent.skill_canonical import canonicalize_skills, format_skill_embedding_text
 
 logger = logging.getLogger("agent.skill_profiler")
 
@@ -162,27 +163,6 @@ def _parse_skills(raw_text: str) -> list[ParsedSkill]:
     raise ValueError(f"groq returned unparseable skill data: {raw_text[:200]}")
 
 
-def _build_skill_summary(skills: list[ParsedSkill]) -> str:
-    """
-    builds a readable sentence for the gemini embedding model.
-    e.g. "Strong: React, Next.js, Prisma. Moderate: FastAPI. Learning: Flutter."
-    grouping by level helps cosine similarity capture seniority signals.
-    """
-    grouped: dict[str, list[str]] = {"strong": [], "moderate": [], "learning": []}
-    for skill in skills:
-        grouped[skill.level].append(skill.name)
-
-    parts = []
-    if grouped["strong"]:
-        parts.append(f"Strong: {', '.join(grouped['strong'])}")
-    if grouped["moderate"]:
-        parts.append(f"Moderate: {', '.join(grouped['moderate'])}")
-    if grouped["learning"]:
-        parts.append(f"Learning: {', '.join(grouped['learning'])}")
-
-    return ". ".join(parts) + "."
-
-
 def _score_matches_for_user(user_id: str) -> int:
     conn = _get_db_connection()
     cur = conn.cursor()
@@ -194,6 +174,7 @@ def _score_matches_for_user(user_id: str) -> int:
                 SELECT
                     u.id AS user_id,
                     u.interests,
+                    u."timeCommitment" AS time_commitment,
                     se.embedding AS skill_embedding,
                     COALESCE(AVG(s.confidence), 0.5) AS avg_confidence
                 FROM users u
@@ -202,7 +183,7 @@ def _score_matches_for_user(user_id: str) -> int:
                 LEFT JOIN skills s ON s."skillProfileId" = sp.id
                 WHERE u.onboarded = true
                   AND u.id = %s
-                GROUP BY u.id, u.interests, se.embedding
+                GROUP BY u.id, u.interests, u."timeCommitment", se.embedding
             ),
             scored AS (
                 SELECT
@@ -221,8 +202,8 @@ def _score_matches_for_user(user_id: str) -> int:
                                 JOIN unnest(r.categories) AS repo_category
                                   ON lower(user_interest) = lower(repo_category)
                                   OR (
-                                      lower(user_interest) = 'ai_ml'
-                                      AND lower(repo_category) IN ('ai', 'ml', 'ai/ml', 'machine-learning', 'machine learning')
+                                      lower(user_interest) IN ('ai', 'ai_ml')
+                                      AND lower(repo_category) IN ('ai', 'ai_ml', 'ml', 'ai/ml', 'machine-learning', 'machine learning')
                                   )
                             ) / GREATEST(array_length(uv.interests, 1), 1)
                         )
@@ -246,7 +227,30 @@ def _score_matches_for_user(user_id: str) -> int:
                                 WHEN 'intermediate'::"Difficulty" THEN 0.75
                                 ELSE 0.45
                             END
-                    END AS diff_score
+                    END AS diff_score,
+                    CASE
+                        WHEN i."estimatedHours" IS NULL OR i."estimatedHours" <= 0 THEN 0.7
+                        ELSE GREATEST(
+                            0.35,
+                            1 - (
+                                ABS(
+                                    i."estimatedHours" - CASE
+                                        WHEN uv.time_commitment <= 4 THEN 4
+                                        WHEN uv.time_commitment <= 7 THEN 8
+                                        ELSE 16
+                                    END
+                                ) / GREATEST(
+                                    i."estimatedHours",
+                                    CASE
+                                        WHEN uv.time_commitment <= 4 THEN 4
+                                        WHEN uv.time_commitment <= 7 THEN 8
+                                        ELSE 16
+                                    END,
+                                    1
+                                )
+                            )
+                        )
+                    END AS time_fit_score
                 FROM user_vectors uv
                 CROSS JOIN issue_embeddings ie
                 JOIN issues i ON i.id = ie.issue_id
@@ -264,7 +268,7 @@ def _score_matches_for_user(user_id: str) -> int:
                 gen_random_uuid()::text,
                 user_id,
                 issue_id,
-                (skill_sim * 0.7) + (interest_sim * 0.2) + (diff_score * 0.1),
+                (skill_sim * 0.65) + (interest_sim * 0.2) + (diff_score * 0.1) + (time_fit_score * 0.05),
                 skill_sim,
                 interest_sim,
                 diff_score,
@@ -350,7 +354,7 @@ async def run_skill_profiler(
     )
 
     raw_text = response.choices[0].message.content or ""
-    skills = _parse_skills(raw_text)
+    skills = canonicalize_skills(_parse_skills(raw_text))
 
     yield {
         "step": "analysing",
@@ -416,7 +420,7 @@ async def run_skill_profiler(
         # -- stage 4: embed into pgvector --
         yield {"step": "embedding", "message": "Building your skill fingerprint…"}
 
-        summary_text = _build_skill_summary(skills)
+        summary_text = format_skill_embedding_text(skills)
         logger.info(f"embedding summary: {summary_text}")
 
         genai_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
@@ -444,11 +448,11 @@ async def run_skill_profiler(
             INSERT INTO skill_snapshots (id, "userId", snapshot, "takenAt")
             VALUES (gen_random_uuid()::text, %s, %s::jsonb, now())
             """,
-            (user_id, json.dumps([s.model_dump() for s in skills])),
+            (user_id, json.dumps([s.__dict__ for s in skills])),
         )
 
         cur.execute(
-            "UPDATE users SET onboarded = true WHERE id = %s",
+            'UPDATE users SET "profileAnalyzed" = true WHERE id = %s',
             (user_id,),
         )
 
@@ -461,13 +465,9 @@ async def run_skill_profiler(
         cur.close()
         conn.close()
 
-    yield {"step": "embedding", "message": "Scoring your issue matches..."}
-    matched_count = _score_matches_for_user(user_id)
-    _clear_feed_cache(user_id)
-
     yield {
         "step": "done",
-        "message": f"Profile ready - {len(skills)} skills identified and {matched_count} matches scored!",
+        "message": f"Profile ready - {len(skills)} skills identified!",
         "summary": {
             "totalCommits": github_data["total_commits"],
             "totalRepos": len(github_data["repos"]),

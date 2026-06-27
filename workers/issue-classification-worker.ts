@@ -7,6 +7,7 @@ import { groq, GROQ_MODEL } from "@/lib/groq";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
 import { matchScoringQueue } from "@/lib/queues";
+import { canonicalizeSkills, formatIssueEmbeddingText } from "@/lib/skills";
 
 const connection = redis as unknown as ConnectionOptions;
 
@@ -27,6 +28,7 @@ The JSON object must contain:
 - requiredSkills: an array of strings
 - issueType: one of "bug", "feature", "docs", "refactor"
 - aiSummary: a 2-3 sentence plain-English summary explaining what the issue is, what's broken or needed, and what kind of change would fix it
+- requiredSkills must use canonical display names when obvious, e.g. TypeScript, JavaScript, Node.js, Next.js, React, Tailwind CSS, tRPC, Prisma, Supabase, PostgreSQL, GraphQL, MongoDB, Redis, Docker, Kubernetes
 `;
 
 function buildUserPrompt(issue: {
@@ -73,7 +75,10 @@ export const issueClassificationWorker = new Worker(
     }
 
     const classification = classificationSchema.parse(JSON.parse(content));
-    const embedding = await embed(classification.requiredSkills.join(" "));
+    const requiredSkills = canonicalizeSkills(
+      classification.requiredSkills.map((name) => ({ name }))
+    ).map((skill) => skill.name);
+    const embedding = await embed(formatIssueEmbeddingText(requiredSkills));
     const vector = toVectorLiteral(embedding);
 
     await prisma.$transaction(async (tx) => {
@@ -89,7 +94,7 @@ export const issueClassificationWorker = new Worker(
         data: {
           difficulty: classification.difficulty,
           estimatedHours: classification.estimatedHours,
-          requiredSkills: classification.requiredSkills,
+          requiredSkills,
           issueType: classification.issueType,
           aiSummary: classification.aiSummary,
           classified: true,

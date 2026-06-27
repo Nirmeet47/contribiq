@@ -138,9 +138,18 @@ async function fetchFeed({
   return (await response.json()) as FeedResponse;
 }
 
-function IssueCard({ match }: { match: FeedMatch }) {
+function IssueCard({
+  match,
+  onDismiss,
+  onRestore,
+}: {
+  match: FeedMatch;
+  onDismiss: (issueId: string) => void;
+  onRestore: (issueId: string) => void;
+}) {
   const queryClient = useQueryClient();
   const [bookmarked, setBookmarked] = useState(match.issue.bookmarked);
+  const [dismissed, setDismissed] = useState(false);
   const percent = Math.round(match.score * 100);
   const logoUrl = `https://github.com/${match.issue.repo.owner}.png`;
   const responsiveness = responsivenessTone(match.issue.repo.maintainerScore);
@@ -173,6 +182,8 @@ function IssueCard({ match }: { match: FeedMatch }) {
 
   const feedbackMutation = useMutation({
     mutationFn: async () => {
+      if (dismissed) return;
+
       const response = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -180,7 +191,15 @@ function IssueCard({ match }: { match: FeedMatch }) {
       });
       if (!response.ok) throw new Error("Failed to dismiss issue");
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["feed"] }),
+    onMutate: () => {
+      setDismissed(true);
+      onDismiss(match.issue.id);
+    },
+    onError: () => {
+      setDismissed(false);
+      onRestore(match.issue.id);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["feed"] }),
   });
 
   return (
@@ -268,10 +287,10 @@ function IssueCard({ match }: { match: FeedMatch }) {
           <button
             type="button"
             onClick={() => feedbackMutation.mutate()}
-            disabled={feedbackMutation.isPending}
+            disabled={feedbackMutation.isPending || dismissed}
             className="rounded-sm border border-zinc-800 bg-zinc-900 p-2 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-white disabled:opacity-50"
-            aria-label="Not interested"
-            title="Not interested"
+            aria-label={dismissed ? "Issue dismissed" : "Not interested"}
+            title={dismissed ? "Issue dismissed" : "Not interested"}
           >
             <ThumbsDown className="h-4 w-4" />
           </button>
@@ -285,6 +304,7 @@ export function IssueFeed() {
   const [difficulty, setDifficulty] = useState<Difficulty | undefined>();
   const [issueType, setIssueType] = useState<IssueType | undefined>();
   const [sort, setSort] = useState<SortOrder>("desc");
+  const [dismissedIssueIds, setDismissedIssueIds] = useState<Set<string>>(() => new Set());
 
   const feedQuery = useQuery({
     queryKey: ["feed", { difficulty, issueType, sort }],
@@ -368,9 +388,24 @@ export function IssueFeed() {
       )}
 
       <div className="space-y-4">
-        {feedQuery.data?.matches.map((match) => (
-          <IssueCard key={match.id} match={match} />
-        ))}
+        {feedQuery.data?.matches
+          .filter((match) => !dismissedIssueIds.has(match.issue.id))
+          .map((match) => (
+            <IssueCard
+              key={match.id}
+              match={match}
+              onDismiss={(issueId) =>
+                setDismissedIssueIds((current) => new Set(current).add(issueId))
+              }
+              onRestore={(issueId) =>
+                setDismissedIssueIds((current) => {
+                  const next = new Set(current);
+                  next.delete(issueId);
+                  return next;
+                })
+              }
+            />
+          ))}
       </div>
     </div>
   );

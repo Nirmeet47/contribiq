@@ -6,6 +6,7 @@
 // github fetch → groq analysis → postgres write → gemini embedding
 
 import { NextResponse } from "next/server";
+import { decryptGithubToken } from "@/lib/github-token";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/prisma";
 
@@ -37,7 +38,32 @@ export async function GET() {
     where: { githubId },
   });
 
+  if (dbUser?.onboarded) {
+    return NextResponse.json(
+      { error: "User is already onboarded. Profile generation was not started." },
+      { status: 409 }
+    );
+  }
+
   if (!dbUser || !dbUser.githubToken) {
+    return NextResponse.json(
+      { error: "No GitHub token found. Please re-authenticate." },
+      { status: 400 }
+    );
+  }
+
+  let githubToken: string | null = null;
+  try {
+    githubToken = decryptGithubToken(dbUser.githubToken);
+  } catch (error) {
+    console.error("[onboarding/progress] Failed to decrypt GitHub token", { error });
+    return NextResponse.json(
+      { error: "GitHub token could not be decrypted. Please re-authenticate." },
+      { status: 400 }
+    );
+  }
+
+  if (!githubToken) {
     return NextResponse.json(
       { error: "No GitHub token found. Please re-authenticate." },
       { status: 400 }
@@ -51,7 +77,7 @@ export async function GET() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         user_id: dbUser.id,
-        github_token: dbUser.githubToken,
+        github_token: githubToken,
       }),
     });
 

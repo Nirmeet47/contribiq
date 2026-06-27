@@ -28,6 +28,8 @@ type MeResponse = {
 
 type BookmarksResponse = {
   count: number;
+  totalBookmarks?: number;
+  weeklyBookmarks?: number;
 };
 
 type ContributionStatsResponse = {
@@ -169,7 +171,7 @@ export function RightSidebar() {
           {[
             {
               label: "Bookmarked",
-              value: bookmarksQuery.data?.count ?? 0,
+              value: bookmarksQuery.data?.weeklyBookmarks ?? 0,
               icon: Bookmark,
             },
             {

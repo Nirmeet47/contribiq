@@ -9,6 +9,7 @@ import { decryptGithubToken, getAppGitHubToken } from "@/lib/github-token";
 import { groq, GROQ_MODEL } from "@/lib/groq";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
+import { canonicalizeSkills, formatSkillEmbeddingText, skillIdentity } from "@/lib/skills";
 
 const connection = redis as unknown as ConnectionOptions;
 
@@ -33,7 +34,7 @@ const contributionSummarySchema = z.object({
 });
 
 const systemPrompt =
-  "You analyze merged GitHub PRs and extract contribution metadata. Return only strict JSON with keys: aiDescription (string), skillsDemonstrated (string array), complexity (integer 1-5), linesAdded (integer), linesRemoved (integer), filesChanged (integer).";
+  "You analyze merged GitHub PRs and extract contribution metadata. Return only strict JSON with keys: aiDescription (string), skillsDemonstrated (string array), complexity (integer 1-5), linesAdded (integer), linesRemoved (integer), filesChanged (integer). Use canonical skill display names when obvious, e.g. TypeScript, JavaScript, Node.js, Next.js, React, Tailwind CSS, tRPC, Prisma, Supabase, PostgreSQL, GraphQL, MongoDB, Redis, Docker, Kubernetes.";
 
 function githubHeaders(token: string) {
   return {
@@ -170,8 +171,11 @@ export const contributionSummaryWorker = new Worker(
     }
 
     const summary = contributionSummarySchema.parse(JSON.parse(content));
+    const demonstratedSkills = canonicalizeSkills(
+      summary.skillsDemonstrated.map((name) => ({ name, level: "learning", confidence: 0.4 }))
+    );
     const existingSkillNames = new Set(
-      skillProfile.skills.map((skill) => skill.name.toLowerCase())
+      skillProfile.skills.map((skill) => skillIdentity(skill.name))
     );
 
     await prisma.$transaction(async (tx) => {
@@ -179,7 +183,7 @@ export const contributionSummaryWorker = new Worker(
         where: { id: contribution.id },
         data: {
           aiDescription: summary.aiDescription,
-          skillsDemonstrated: summary.skillsDemonstrated,
+          skillsDemonstrated: demonstratedSkills.map((skill) => skill.name),
           complexity: summary.complexity,
           linesAdded: summary.linesAdded,
           linesRemoved: summary.linesRemoved,
@@ -188,9 +192,8 @@ export const contributionSummaryWorker = new Worker(
         },
       });
 
-      for (const skillName of summary.skillsDemonstrated) {
-        const normalizedName = skillName.trim();
-        if (!normalizedName || existingSkillNames.has(normalizedName.toLowerCase())) {
+      for (const skill of demonstratedSkills) {
+        if (existingSkillNames.has(skillIdentity(skill.name))) {
           continue;
         }
 
@@ -198,19 +201,19 @@ export const contributionSummaryWorker = new Worker(
           where: {
             skillProfileId_name: {
               skillProfileId: skillProfile.id,
-              name: normalizedName,
+              name: skill.name,
             },
           },
           update: {},
           create: {
             skillProfileId: skillProfile.id,
-            name: normalizedName,
+            name: skill.name,
             level: "learning",
             confidence: 0.4,
           },
         });
 
-        existingSkillNames.add(normalizedName.toLowerCase());
+        existingSkillNames.add(skillIdentity(skill.name));
       }
 
       const allSkills = await tx.skill.findMany({
@@ -225,7 +228,7 @@ export const contributionSummaryWorker = new Worker(
         },
       });
 
-      const vector = toVectorLiteral(await embed(allSkills.map((skill) => skill.name).join(" ")));
+      const vector = toVectorLiteral(await embed(formatSkillEmbeddingText(allSkills)));
 
       await tx.$executeRaw`
         INSERT INTO skill_embeddings (skill_profile_id, embedding, updated_at)

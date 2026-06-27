@@ -9,6 +9,7 @@ model User {
   githubToken    String? // stored encrypted, used for github api calls on behalf of the user
   interests      String[] // picked during onboarding e.g. ["frontend", "ai"]
   timeCommitment Int      @default(0) // hours/week the dev said they can contribute
+  profileAnalyzed Boolean @default(false) // true once github analysis/skill profile generation has completed
   onboarded      Boolean  @default(false) // flips to true once they finish the onboarding wizard
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt

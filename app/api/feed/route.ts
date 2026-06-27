@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { appConfig } from "@/lib/app-config";
 import { invalidateAllFeedCaches } from "@/lib/feed-cache";
 import { getAppGitHubToken } from "@/lib/github-token";
 import { prisma } from "@/lib/prisma";
@@ -13,9 +14,6 @@ const feedQuerySchema = z.object({
   issueType: z.enum(["bug", "feature", "docs", "refactor"]).optional(),
   sort: z.enum(["desc", "asc"]).default("desc"),
 });
-
-const ISSUE_VALIDATION_STALE_MS = 60 * 60 * 1000;
-const MAX_STALE_ISSUES_TO_VALIDATE = 5;
 
 type FeedMatch = {
   issue: {
@@ -96,8 +94,8 @@ async function fetchGitHubIssue(owner: string, name: string, issueUrl: string) {
 async function validateStaleIssues<T extends FeedMatch>(matches: T[]) {
   const now = Date.now();
   const staleMatches = matches
-    .filter((match) => now - match.issue.updatedAt.getTime() > ISSUE_VALIDATION_STALE_MS)
-    .slice(0, MAX_STALE_ISSUES_TO_VALIDATE);
+    .filter((match) => now - match.issue.updatedAt.getTime() > appConfig.issueValidationStaleMs)
+    .slice(0, appConfig.maxStaleIssuesToValidate);
 
   if (staleMatches.length === 0) return matches;
 
@@ -195,7 +193,7 @@ export async function GET(request: Request) {
       },
     },
     orderBy: { score: sort },
-    take: 30,
+    take: appConfig.feedPageSize,
     select: {
       id: true,
       score: true,

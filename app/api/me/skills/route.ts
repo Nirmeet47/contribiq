@@ -1,11 +1,19 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
+import { embed } from "@/lib/embeddings";
+import { invalidateUserFeedCaches } from "@/lib/feed-cache";
 import { prisma } from "@/lib/prisma";
+import { matchScoringQueue } from "@/lib/queues";
 import type { SkillLevel } from "@prisma/client";
+import { canonicalizeSkills, formatSkillEmbeddingText, skillIdentity } from "@/lib/skills";
 
 export const dynamic = "force-dynamic";
 
 const SKILL_LEVELS = new Set<SkillLevel>(["strong", "moderate", "learning"]);
+
+function toVectorLiteral(values: number[]) {
+  return `[${values.join(",")}]`;
+}
 
 export async function GET() {
   try {
@@ -46,7 +54,10 @@ export async function GET() {
       mergedPRs: dbUser.skillProfile.mergedPRs,
     };
 
-    return NextResponse.json({ skills: dbUser.skillProfile.skills, summary });
+    return NextResponse.json({
+      skills: canonicalizeSkills(dbUser.skillProfile.skills),
+      summary,
+    });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
@@ -80,29 +91,36 @@ export async function PATCH(request: Request) {
 
     const skillsByName = new Map<string, { name: string; level: SkillLevel }>();
     for (const skill of incomingSkills) {
-      const name = typeof skill?.name === "string" ? skill.name.trim() : "";
+      const name = typeof skill?.name === "string" ? skill.name : "";
       const level = skill?.level as SkillLevel;
 
       if (!name || !SKILL_LEVELS.has(level)) {
         return NextResponse.json({ error: "Invalid skills payload" }, { status: 400 });
       }
 
-      skillsByName.set(name.toLowerCase(), { name, level });
+      const [canonicalSkill] = canonicalizeSkills([{ name, level }]);
+      if (canonicalSkill) {
+        skillsByName.set(skillIdentity(canonicalSkill.name), {
+          name: canonicalSkill.name,
+          level: canonicalSkill.level,
+        });
+      }
     }
 
     const skills = [...skillsByName.values()];
     const skillNames = skills.map((skill) => skill.name);
     const skillProfileId = dbUser.skillProfile.id;
 
-    await prisma.$transaction([
-      prisma.skill.deleteMany({
+    const savedSkills = await prisma.$transaction(async (tx) => {
+      await tx.skill.deleteMany({
         where: {
           skillProfileId,
           name: { notIn: skillNames },
         },
-      }),
-      ...skills.map((skill) =>
-        prisma.skill.upsert({
+      });
+
+      for (const skill of skills) {
+        await tx.skill.upsert({
           where: {
             skillProfileId_name: {
               skillProfileId,
@@ -120,9 +138,40 @@ export async function PATCH(request: Request) {
           update: {
             level: skill.level,
           },
-        })
-      ),
-    ]);
+        });
+      }
+
+      return tx.skill.findMany({
+        where: { skillProfileId },
+        orderBy: { name: "asc" },
+        select: {
+          name: true,
+          level: true,
+          confidence: true,
+          repoCount: true,
+          commitCount: true,
+        },
+      });
+    });
+
+    const vector = toVectorLiteral(await embed(formatSkillEmbeddingText(savedSkills)));
+    await prisma.$executeRaw`
+      INSERT INTO skill_embeddings (skill_profile_id, embedding, updated_at)
+      VALUES (${skillProfileId}, ${vector}::vector, now())
+      ON CONFLICT (skill_profile_id)
+      DO UPDATE SET embedding = EXCLUDED.embedding, updated_at = now()
+    `;
+
+    await invalidateUserFeedCaches(dbUser.id, "skills-updated");
+
+    try {
+      await matchScoringQueue.add("score-matches", { userId: dbUser.id });
+    } catch (error) {
+      console.error("[api/me/skills] Failed to enqueue match scoring after skill edit", {
+        userId: dbUser.id,
+        error,
+      });
+    }
 
     return NextResponse.json({ success: true });
   } catch (e) {

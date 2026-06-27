@@ -1,12 +1,12 @@
 import "dotenv/config";
 
 import { Worker, type ConnectionOptions } from "bullmq";
+import { appConfig } from "@/lib/app-config";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
 import { issueClassificationQueue } from "@/lib/queues";
 
 const GITHUB_GRAPHQL_URL = "https://api.github.com/graphql";
-const ISSUE_PAGE_SIZE = 50;
 const connection = redis as unknown as ConnectionOptions;
 
 type GitHubIssueNode = {
@@ -15,6 +15,8 @@ type GitHubIssueNode = {
   body: string | null;
   url: string;
   state: "OPEN" | "CLOSED";
+  createdAt: string;
+  updatedAt: string;
   assignees: { totalCount: number };
   comments: { totalCount: number };
   labels: { nodes: Array<{ name: string }> };
@@ -46,6 +48,8 @@ const fetchIssuesQuery = `
           body
           url
           state
+          createdAt
+          updatedAt
           assignees {
             totalCount
           }
@@ -75,6 +79,7 @@ async function fetchOpenIssues(owner: string, name: string) {
   const token = getGitHubToken();
   const issues: GitHubIssueNode[] = [];
   let after: string | null = null;
+  let pagesFetched = 0;
 
   do {
     const response = await fetch(GITHUB_GRAPHQL_URL, {
@@ -85,7 +90,7 @@ async function fetchOpenIssues(owner: string, name: string) {
       },
       body: JSON.stringify({
         query: fetchIssuesQuery,
-        variables: { owner, name, first: ISSUE_PAGE_SIZE, after },
+        variables: { owner, name, first: appConfig.issueFetchPageSize, after },
       }),
     });
 
@@ -105,9 +110,50 @@ async function fetchOpenIssues(owner: string, name: string) {
 
     issues.push(...page.nodes);
     after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
-  } while (after);
+    pagesFetched += 1;
+  } while (after && pagesFetched < appConfig.issueFetchMaxPagesPerRepo);
 
   return issues;
+}
+
+function clamp01(value: number) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function calculateRepoScores(issues: GitHubIssueNode[]) {
+  if (issues.length === 0) {
+    return { activityScore: 0, maintainerScore: 0 };
+  }
+
+  // Lightweight live repo metrics from the same paginated issue sync:
+  // activityScore rewards recently created/updated open issues and discussion volume.
+  // maintainerScore approximates responsiveness from comments, assignees, and discussion depth.
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const recentUpdated = issues.filter(
+    (issue) => now - new Date(issue.updatedAt).getTime() <= 14 * dayMs
+  ).length;
+  const recentCreated = issues.filter(
+    (issue) => now - new Date(issue.createdAt).getTime() <= 30 * dayMs
+  ).length;
+  const commented = issues.filter((issue) => issue.comments.totalCount > 0).length;
+  const assigned = issues.filter((issue) => issue.assignees.totalCount > 0).length;
+  const averageComments =
+    issues.reduce((total, issue) => total + issue.comments.totalCount, 0) / issues.length;
+
+  const activityScore = clamp01(
+    recentUpdated / Math.min(issues.length, appConfig.issueFetchPageSize) * 0.65 +
+      recentCreated / Math.min(issues.length, appConfig.issueFetchPageSize) * 0.25 +
+      clamp01(averageComments / 6) * 0.1
+  );
+
+  const maintainerScore = clamp01(
+    (commented / issues.length) * 0.55 +
+      (assigned / issues.length) * 0.25 +
+      clamp01(averageComments / 8) * 0.2
+  );
+
+  return { activityScore, maintainerScore };
 }
 
 export const issueFetchWorker = new Worker(
@@ -121,6 +167,7 @@ export const issueFetchWorker = new Worker(
 
     for (const repo of repos) {
       const issues = await fetchOpenIssues(repo.owner, repo.name);
+      const scores = calculateRepoScores(issues);
 
       for (const issue of issues) {
         if (!issue.databaseId) continue;
@@ -175,7 +222,11 @@ export const issueFetchWorker = new Worker(
 
       await prisma.repo.update({
         where: { id: repo.id },
-        data: { lastFetchedAt: new Date() },
+        data: {
+          lastFetchedAt: new Date(),
+          activityScore: scores.activityScore,
+          maintainerScore: scores.maintainerScore,
+        },
       });
     }
 

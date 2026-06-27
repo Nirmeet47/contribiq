@@ -6,6 +6,7 @@ import type { User as SupabaseUser } from "@supabase/supabase-js"
 import { AppShell } from "@/app/app-shell"
 import { IssueFeed } from "./issue-feed"
 import { RightSidebar } from "./right-sidebar"
+import { normalizeSkillName, skillIdentity } from "@/lib/skills"
 import {
   LogOut, Code2, GitPullRequest, BookOpen,
   CheckCircle2, Loader2, XCircle, GitMerge, Brain, Fingerprint,
@@ -27,6 +28,7 @@ interface DbUser {
   username?: string | null
   avatarUrl?: string | null
   onboarded?: boolean
+  profileAnalyzed?: boolean
   interests?: string[]
   timeCommitment?: number
 }
@@ -90,10 +92,12 @@ export default function DashboardPage() {
 
   // -- Onboarding State --
   const [currentStep, setCurrentStep] = useState("fetching")
-  const [message, setMessage] = useState("Connecting to GitHub…")
+  const [message, setMessage] = useState("Connecting to GitHub...")
   const [isDone, setIsDone] = useState(false)
   const [isError, setIsError] = useState(false)
+  const [sseRetryToken, setSseRetryToken] = useState(0)
   const sseStarted = useRef(false)
+  const eventSourceRef = useRef<EventSource | null>(null)
 
   // -- Skills State --
   const [skills, setSkills] = useState<Skill[]>([])
@@ -138,7 +142,15 @@ export default function DashboardPage() {
         if (data && !data.error) {
           setDbUser(data)
           if (data.onboarded === false) {
-            setViewState("onboarding")
+            setSelectedInterests(data.interests ?? [])
+            setSelectedTimeCommitment(data.timeCommitment > 0 ? data.timeCommitment : null)
+
+            if (data.profileAnalyzed) {
+              await fetchSkills()
+              setViewState(data.interests?.length ? "time_commitment" : "skills_review")
+            } else {
+              setViewState("onboarding")
+            }
           } else {
             // Already onboarded, fetch skills and show dashboard
             fetchSkills()
@@ -155,18 +167,32 @@ export default function DashboardPage() {
   // 2. Trigger SSE if in onboarding state
   useEffect(() => {
     if (viewState !== "onboarding" || sseStarted.current) return
+
+    if (dbUser?.onboarded) {
+      fetchSkills()
+      setViewState("dashboard")
+      return
+    }
+
     sseStarted.current = true
+    setIsError(false)
+    setIsDone(false)
+    setCurrentStep("fetching")
+    setMessage("Connecting to GitHub...")
 
     const eventSource = new EventSource("/api/onboarding/progress")
+    eventSourceRef.current = eventSource
 
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data)
+      setIsError(false)
       setCurrentStep(data.step)
       setMessage(data.message)
 
       if (data.step === "done") {
         setIsDone(true)
         eventSource.close()
+        eventSourceRef.current = null
         // Wait a moment then transition to skills review
         setTimeout(() => {
           fetchSkills()
@@ -177,6 +203,7 @@ export default function DashboardPage() {
       if (data.step === "error") {
         setIsError(true)
         eventSource.close()
+        eventSourceRef.current = null
       }
     }
 
@@ -184,10 +211,34 @@ export default function DashboardPage() {
       setIsError(true)
       setMessage("Lost connection to the analysis server.")
       eventSource.close()
+      eventSourceRef.current = null
     }
 
-    return () => eventSource.close()
-  }, [viewState])
+    return () => {
+      eventSource.close()
+      if (eventSourceRef.current === eventSource) {
+        eventSourceRef.current = null
+      }
+    }
+  }, [viewState, sseRetryToken, dbUser?.onboarded])
+
+  const retryOnboardingAnalysis = () => {
+    if (dbUser?.onboarded) {
+      fetchSkills()
+      setViewState("dashboard")
+      return
+    }
+
+    eventSourceRef.current?.close()
+    eventSourceRef.current = null
+    sseStarted.current = false
+    setIsError(false)
+    setIsDone(false)
+    setCurrentStep("fetching")
+    setMessage("Connecting to GitHub...")
+    setViewState("onboarding")
+    setSseRetryToken((value) => value + 1)
+  }
   const handleLogout = async () => {
     await supabase.auth.signOut()
     window.location.href = "/login"
@@ -263,8 +314,8 @@ export default function DashboardPage() {
   }
 
   const handleAddSkill = (level: Level) => {
-    const name = newSkillInputs[level].trim()
-    if (!name || skills.some((s) => s.name.toLowerCase() === name.toLowerCase())) return
+    const name = normalizeSkillName(newSkillInputs[level])
+    if (!name || skills.some((s) => skillIdentity(s.name) === skillIdentity(name))) return
     setSkills((prev) => [...prev, { name, level, confidence: 0.5, repoCount: 0, commitCount: 0 }])
     setNewSkillInputs((prev) => ({ ...prev, [level]: "" }))
   }
@@ -328,7 +379,7 @@ export default function DashboardPage() {
             })}
           </div>
           {isError && (
-            <button onClick={() => window.location.reload()} className="w-full rounded-sm bg-white px-4 py-3 text-sm font-bold text-zinc-950 transition-colors hover:bg-zinc-200">
+            <button onClick={retryOnboardingAnalysis} className="w-full rounded-sm bg-white px-4 py-3 text-sm font-bold text-zinc-950 transition-colors hover:bg-zinc-200">
               Try Again
             </button>
           )}
@@ -393,7 +444,7 @@ export default function DashboardPage() {
                 value={newSkillInputs[level]}
                 onChange={(e) => setNewSkillInputs((prev) => ({ ...prev, [level]: e.target.value }))}
                 onKeyDown={(e) => e.key === "Enter" && handleAddSkill(level)}
-                placeholder="Add a skill…"
+                placeholder="Add a skill..."
                 className="flex-1 rounded-sm border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-300 placeholder:text-zinc-600 focus:border-zinc-700 focus:outline-none"
               />
               <button type="button" onClick={() => handleAddSkill(level)} className={`flex items-center gap-1 rounded-sm border px-3 py-1.5 text-xs font-bold transition-colors ${config.border} ${config.text} hover:${config.bg}`}>

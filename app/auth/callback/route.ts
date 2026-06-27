@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { encryptGithubToken } from '@/lib/github-token'
 import { prisma } from '@/lib/prisma'
 
 export async function GET(request: Request) {
@@ -26,9 +27,7 @@ export async function GET(request: Request) {
           where: { githubId }
         })
 
-        const githubToken = session.provider_token ?? null
-
-        let isOnboarded = false;
+        const githubToken = encryptGithubToken(session.provider_token)
 
         if (!existingUser) {
           // Create new user (First login)
@@ -50,9 +49,7 @@ export async function GET(request: Request) {
             }
           })
           
-          isOnboarded = false;
         } else {
-          isOnboarded = existingUser.onboarded;
           if (githubToken) {
             // Update the token if it changed
             await prisma.user.update({

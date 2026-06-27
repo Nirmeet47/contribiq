@@ -21,6 +21,7 @@ import re
 import json
 import time
 import logging
+import sys
 import psycopg2
 import psycopg2.extras
 import httpx
@@ -29,6 +30,12 @@ from google import genai
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+from agent.skill_canonical import canonicalize_skills, format_issue_embedding_text
 
 logging.basicConfig(
     level=logging.INFO,
@@ -235,7 +242,7 @@ def embed_skills(skills: list[str]) -> list[float] | None:
     """Embed the requiredSkills list as a single string using Gemini."""
     if not skills:
         return None
-    text = ", ".join(skills)
+    text = format_issue_embedding_text(skills)
     try:
         resp = genai_client.models.embed_content(
             model="gemini-embedding-001",
@@ -276,8 +283,10 @@ def step2_classify(conn):
         if not result:
             continue
 
+        required_skills = [skill.name for skill in canonicalize_skills(result["requiredSkills"])]
+
         # embed the requiredSkills
-        vector = embed_skills(result["requiredSkills"])
+        vector = embed_skills(required_skills)
 
         plain_cur = conn.cursor()
         try:
@@ -297,7 +306,7 @@ def step2_classify(conn):
                 (
                     result["difficulty"],
                     result["estimatedHours"],
-                    result["requiredSkills"],
+                    required_skills,
                     result["issueType"],
                     result["aiSummary"][:500],
                     issue["id"],
@@ -321,7 +330,7 @@ def step2_classify(conn):
             done += 1
             log.info(
                 f"  ✓ {result['difficulty']} | {result['issueType']} "
-                f"| {result['requiredSkills'][:3]}"
+                f"| {required_skills[:3]}"
             )
 
         except Exception as e:
@@ -346,7 +355,12 @@ def step3_match(conn):
     against all issue embeddings and write scored IssueMatch rows.
 
     Score formula (from issue_match.prisma comments):
-        score = skillSim * 0.7 + interestSim * 0.2 + diffScore * 0.1
+        score = skillSim * 0.65 + interestSim * 0.2 + diffScore * 0.1 + timeFit * 0.05
+
+    timeFit:
+        <=4 hrs/week  → prefers ~4h issues
+        <=7 hrs/week  → prefers ~8h issues
+        >7 hrs/week   → prefers ~16h issues
 
     diffScore:
         beginner     → 1.0  (most accessible)
@@ -386,6 +400,7 @@ def step3_match(conn):
             SELECT
                 i.id                                                    AS issue_id,
                 i.difficulty,
+                i."estimatedHours",
                 r.categories,
                 1 - (ie.embedding <=> se.embedding)                    AS skill_sim
             FROM   issue_embeddings  ie
@@ -404,7 +419,7 @@ def step3_match(conn):
 
         log.info(f"    {len(scored_issues)} classified issues to score")
 
-        user_interests = set(user["interests"] or [])
+        user_interests = {interest.lower() for interest in (user["interests"] or [])}
 
         diff_score_map = {
             "beginner":     1.0,
@@ -417,12 +432,24 @@ def step3_match(conn):
 
         for row in scored_issues:
             skill_sim    = float(row["skill_sim"])
-            repo_cats    = set(row["categories"] or [])
+            repo_cats    = {category.lower() for category in (row["categories"] or [])}
             interest_sim = 1.0 if repo_cats & user_interests else 0.0
+            if interest_sim == 0.0 and user_interests & {"ai", "ai_ml"}:
+                ai_categories = {"ai", "ai_ml", "ml", "ai/ml", "machine-learning", "machine learning"}
+                interest_sim = 1.0 if repo_cats & ai_categories else 0.0
             diff_score   = diff_score_map.get(row["difficulty"] or "intermediate", 0.6)
+            estimated_hours = float(row["estimatedHours"] or 0)
+            if estimated_hours <= 0:
+                time_fit = 0.7
+            else:
+                preferred_hours = 4 if user["timeCommitment"] <= 4 else 8 if user["timeCommitment"] <= 7 else 16
+                time_fit = max(
+                    0.35,
+                    1 - abs(estimated_hours - preferred_hours) / max(estimated_hours, preferred_hours, 1),
+                )
 
             final_score  = round(
-                skill_sim * 0.7 + interest_sim * 0.2 + diff_score * 0.1, 4
+                skill_sim * 0.65 + interest_sim * 0.2 + diff_score * 0.1 + time_fit * 0.05, 4
             )
 
             try:

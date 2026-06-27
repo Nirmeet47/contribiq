@@ -30,17 +30,36 @@ async function getDbUserId() {
   return dbUser?.id ?? null;
 }
 
+function startOfCurrentUtcWeek() {
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  start.setUTCDate(start.getUTCDate() - start.getUTCDay());
+  return start;
+}
+
 export async function GET() {
   const userId = await getDbUserId();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const count = await prisma.bookmark.count({
-    where: { userId },
-  });
+  const [totalBookmarks, weeklyBookmarks] = await Promise.all([
+    prisma.bookmark.count({
+      where: { userId },
+    }),
+    prisma.bookmark.count({
+      where: {
+        userId,
+        createdAt: { gte: startOfCurrentUtcWeek() },
+      },
+    }),
+  ]);
 
-  return NextResponse.json({ count });
+  return NextResponse.json({
+    count: totalBookmarks,
+    totalBookmarks,
+    weeklyBookmarks,
+  });
 }
 
 export async function POST(request: Request) {

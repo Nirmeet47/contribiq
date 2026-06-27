@@ -161,7 +161,23 @@ export default function IssuePage({
 
   const workingMutation = useMutation({
     mutationFn: () => toggleWorking(issueId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["issue", issueId] }),
+    onSuccess: (data) => {
+      queryClient.setQueryData<IssueDetailResponse>(["issue", issueId], (current) => {
+        if (!current) return current;
+
+        const nextWorkersCount =
+          data.working === current.isWorking
+            ? current.workersCount
+            : Math.max(0, current.workersCount + (data.working ? 1 : -1));
+
+        return {
+          ...current,
+          isWorking: data.working,
+          workersCount: nextWorkersCount,
+        };
+      });
+      queryClient.invalidateQueries({ queryKey: ["issue", issueId] });
+    },
   });
 
   if (issueQuery.isLoading) {
@@ -431,7 +447,7 @@ export default function IssuePage({
                 }`}
               >
                 {workingMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                {isWorking ? "✓ I'm on this" : "I'm working on this"}
+                {isWorking ? "Stop working on this" : "I'm working on this"}
               </button>
             </div>
           </aside>

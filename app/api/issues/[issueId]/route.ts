@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { appConfig } from "@/lib/app-config";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
 import { createClient } from "@/utils/supabase/server";
@@ -126,7 +127,7 @@ async function getSimilarIssues(issueId: string, requiredSkills: string[]) {
       classified: true,
       requiredSkills: { hasSome: requiredSkills },
     },
-    take: 5,
+    take: appConfig.similarIssuesLimit,
     select: {
       id: true,
       title: true,

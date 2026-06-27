@@ -1,5 +1,6 @@
 // one row per user-issue pair, recomputed by the match scoring job
-// score = skillSim*0.7 + interestSim*0.2 + diffScore*0.1
+// score = skillSim*0.65 + interestSim*0.2 + diffScore*0.1 + timeFit*0.05
+// timeFit is computed dynamically from User.timeCommitment and Issue.estimatedHours.
 // feed is just this table ordered by score desc
 
 model IssueMatch {
@@ -7,7 +8,7 @@ model IssueMatch {
   userId      String
   issueId     String
   score       Float // final score shown as "91% match" in the feed
-  skillSim    Float // cosine similarity from pgvector, makes up 70% of the score
+  skillSim    Float // cosine similarity from pgvector, makes up 65% of the score
   interestSim Float // does the repo category match what the user said they like
   diffScore   Float // is the difficulty actually suitable for where this user is at
 

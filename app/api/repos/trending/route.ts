@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { skillIdentity } from "@/lib/skills";
 import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -24,10 +25,6 @@ async function getDbUserId() {
   return dbUser?.id ?? null;
 }
 
-function normalize(value: string) {
-  return value.trim().toLowerCase();
-}
-
 export async function GET() {
   const userId = await getDbUserId();
   if (!userId) {
@@ -45,7 +42,7 @@ export async function GET() {
 
   const normalizedSkills = new Set(
     (skillProfile?.skills ?? [])
-      .map((skill) => normalize(skill.name))
+      .map((skill) => skillIdentity(skill.name))
       .filter(Boolean)
   );
 
@@ -71,9 +68,9 @@ export async function GET() {
   const matchingRepos = repos
     .filter((repo) => {
       const languageMatches =
-        repo.language !== null && normalizedSkills.has(normalize(repo.language));
+        repo.language !== null && normalizedSkills.has(skillIdentity(repo.language));
       const categoryMatches = repo.categories.some((category) =>
-        normalizedSkills.has(normalize(category))
+        normalizedSkills.has(skillIdentity(category))
       );
 
       return languageMatches || categoryMatches;

@@ -1,0 +1,2 @@
+ALTER TABLE "users"
+ADD COLUMN "profileAnalyzed" BOOLEAN NOT NULL DEFAULT false;
