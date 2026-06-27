@@ -52,6 +52,37 @@ function longestDateStreak(dates: string[]) {
   return longest;
 }
 
+function addUtcDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function currentDateStreak(dates: string[]) {
+  if (dates.length === 0) return 0;
+
+  const dateSet = new Set(dates);
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const todayKey = utcDateString(today);
+  const yesterday = addUtcDays(today, -1);
+  const yesterdayKey = utcDateString(yesterday);
+
+  if (!dateSet.has(todayKey) && !dateSet.has(yesterdayKey)) {
+    return 0;
+  }
+
+  let cursor = dateSet.has(todayKey) ? today : yesterday;
+  let streak = 0;
+
+  while (dateSet.has(utcDateString(cursor))) {
+    streak += 1;
+    cursor = addUtcDays(cursor, -1);
+  }
+
+  return streak;
+}
+
 export async function GET() {
   const userId = await getDbUserId();
   if (!userId) {
@@ -77,28 +108,27 @@ export async function GET() {
   const uniqueRepoPairs = new Set(
     contributions.map((contribution) => `${contribution.repoOwner}/${contribution.repoName}`)
   );
-  const uniqueRepoOwners = [...new Set(contributions.map((contribution) => contribution.repoOwner))];
-  const uniqueRepoNames = [...new Set(contributions.map((contribution) => contribution.repoName))];
+  const fullNames = [...uniqueRepoPairs];
 
   const repos =
-    uniqueRepoPairs.size > 0
+    fullNames.length > 0
       ? await prisma.repo.findMany({
           where: {
-            owner: { in: uniqueRepoOwners },
-            name: { in: uniqueRepoNames },
+            fullName: { in: fullNames },
           },
-          select: { owner: true, name: true, stars: true },
+          select: { fullName: true, stars: true },
         })
       : [];
 
-  const totalReach = repos
-    .filter((repo) => uniqueRepoPairs.has(`${repo.owner}/${repo.name}`))
-    .reduce((sum, repo) => sum + repo.stars, 0);
+  const totalReach = repos.reduce((sum, repo) => sum + repo.stars, 0);
+
+  const contributionDates = contributions.map((contribution) => utcDateString(contribution.mergedAt));
 
   const payload = {
     totalPRs: contributions.length,
     reposCount: uniqueRepoPairs.size,
-    longestStreak: longestDateStreak(contributions.map((contribution) => utcDateString(contribution.mergedAt))),
+    currentStreak: currentDateStreak(contributionDates),
+    longestStreak: longestDateStreak(contributionDates),
     totalReach,
   };
 

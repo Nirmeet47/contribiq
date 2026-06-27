@@ -19,6 +19,12 @@ type GitHubComment = {
   } | null;
 };
 
+type PublicIssuePayload = {
+  issue: NonNullable<Awaited<ReturnType<typeof getPublicIssue>>>;
+  similarIssues: Awaited<ReturnType<typeof getSimilarIssues>>;
+  comments: Awaited<ReturnType<typeof fetchIssueComments>>;
+};
+
 async function getDbUser() {
   const supabase = await createClient();
   const {
@@ -78,24 +84,8 @@ async function fetchIssueComments(owner: string, repo: string, issueUrl: string)
   }));
 }
 
-export async function GET(
-  _request: Request,
-  { params }: { params: Promise<{ issueId: string }> }
-) {
-  const dbUser = await getDbUser();
-  if (!dbUser) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { issueId } = await params;
-  const cacheKey = `issue:${issueId}`;
-  const cached = await redis.get(cacheKey);
-
-  if (cached) {
-    return NextResponse.json(JSON.parse(cached));
-  }
-
-  const issue = await prisma.issue.findUnique({
+async function getPublicIssue(issueId: string) {
+  return prisma.issue.findUnique({
     where: { id: issueId },
     select: {
       id: true,
@@ -126,14 +116,33 @@ export async function GET(
       },
     },
   });
+}
 
-  if (!issue) {
-    return NextResponse.json({ error: "Issue not found" }, { status: 404 });
-  }
+async function getSimilarIssues(issueId: string, requiredSkills: string[]) {
+  return prisma.issue.findMany({
+    where: {
+      id: { not: issueId },
+      state: "open",
+      classified: true,
+      requiredSkills: { hasSome: requiredSkills },
+    },
+    take: 5,
+    select: {
+      id: true,
+      title: true,
+      aiSummary: true,
+      difficulty: true,
+      issueType: true,
+      githubUrl: true,
+      requiredSkills: true,
+    },
+  });
+}
 
-  const [match, similarIssues, workersCount, workingOn] = await Promise.all([
+async function getUserIssueState(userId: string, issueId: string) {
+  const [match, workersCount, workingOn] = await Promise.all([
     prisma.issueMatch.findFirst({
-      where: { userId: dbUser.id, issueId },
+      where: { userId, issueId },
       select: {
         score: true,
         skillSim: true,
@@ -141,47 +150,59 @@ export async function GET(
         diffScore: true,
       },
     }),
-    prisma.issue.findMany({
-      where: {
-        id: { not: issueId },
-        state: "open",
-        classified: true,
-        requiredSkills: { hasSome: issue.requiredSkills },
-      },
-      take: 5,
-      select: {
-        id: true,
-        title: true,
-        aiSummary: true,
-        difficulty: true,
-        issueType: true,
-        githubUrl: true,
-        requiredSkills: true,
-      },
-    }),
     prisma.workingOn.count({ where: { issueId } }),
     prisma.workingOn.findFirst({
-      where: { userId: dbUser.id, issueId },
+      where: { userId, issueId },
       select: { id: true },
     }),
   ]);
 
-  const comments = await fetchIssueComments(
-    issue.repo.owner,
-    issue.repo.name,
-    issue.githubUrl
-  );
-
-  const payload = {
-    issue,
+  return {
     match,
-    similarIssues,
-    comments,
     workersCount,
+    workingOn: Boolean(workingOn),
     isWorking: Boolean(workingOn),
   };
+}
 
-  await redis.set(cacheKey, JSON.stringify(payload), "EX", 300);
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ issueId: string }> }
+) {
+  const dbUser = await getDbUser();
+  if (!dbUser) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { issueId } = await params;
+  const issueCacheKey = `issue:${issueId}`;
+  const cachedIssue = await redis.get(issueCacheKey);
+  let publicPayload: PublicIssuePayload | null = cachedIssue
+    ? JSON.parse(cachedIssue)
+    : null;
+
+  if (!publicPayload?.issue) {
+    const issue = await getPublicIssue(issueId);
+
+    if (!issue) {
+      return NextResponse.json({ error: "Issue not found" }, { status: 404 });
+    }
+
+    const [similarIssues, comments] = await Promise.all([
+      getSimilarIssues(issueId, issue.requiredSkills),
+      fetchIssueComments(issue.repo.owner, issue.repo.name, issue.githubUrl),
+    ]);
+
+    publicPayload = { issue, similarIssues, comments };
+    await redis.set(issueCacheKey, JSON.stringify(publicPayload), "EX", 300);
+  }
+
+  const userState = await getUserIssueState(dbUser.id, issueId);
+
+  const payload = {
+    ...publicPayload,
+    ...userState,
+  };
 
   return NextResponse.json(payload);
 }

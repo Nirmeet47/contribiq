@@ -3,6 +3,9 @@ import "dotenv/config";
 import { Worker, type ConnectionOptions } from "bullmq";
 import { z } from "zod";
 import { embed } from "@/lib/embeddings";
+import { invalidateContributionStats } from "@/lib/contribution-cache";
+import { invalidateUserFeedCaches } from "@/lib/feed-cache";
+import { decryptGithubToken, getAppGitHubToken } from "@/lib/github-token";
 import { groq, GROQ_MODEL } from "@/lib/groq";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
@@ -32,12 +35,7 @@ const contributionSummarySchema = z.object({
 const systemPrompt =
   "You analyze merged GitHub PRs and extract contribution metadata. Return only strict JSON with keys: aiDescription (string), skillsDemonstrated (string array), complexity (integer 1-5), linesAdded (integer), linesRemoved (integer), filesChanged (integer).";
 
-function githubHeaders() {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) {
-    throw new Error("GITHUB_TOKEN is not set");
-  }
-
+function githubHeaders(token: string) {
   return {
     Authorization: `Bearer ${token}`,
     Accept: "application/vnd.github+json",
@@ -45,10 +43,26 @@ function githubHeaders() {
   };
 }
 
-async function fetchPrFiles(repoOwner: string, repoName: string, prNumber: number) {
+function getContributionGitHubToken(storedUserToken: string | null) {
+  try {
+    const userToken = decryptGithubToken(storedUserToken);
+    if (userToken) return userToken;
+  } catch (error) {
+    console.warn("[contribution-summary] Could not decrypt user GitHub token", { error });
+  }
+
+  const token = getAppGitHubToken();
+  if (!token) {
+    throw new Error("No GitHub token available");
+  }
+
+  return token;
+}
+
+async function fetchPrFiles(repoOwner: string, repoName: string, prNumber: number, token: string) {
   const response = await fetch(
     `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}/files`,
-    { headers: githubHeaders() }
+    { headers: githubHeaders(token) }
   );
 
   if (!response.ok) {
@@ -58,10 +72,10 @@ async function fetchPrFiles(repoOwner: string, repoName: string, prNumber: numbe
   return z.array(diffFileSchema).parse(await response.json());
 }
 
-async function fetchPrBody(repoOwner: string, repoName: string, prNumber: number) {
+async function fetchPrBody(repoOwner: string, repoName: string, prNumber: number, token: string) {
   const response = await fetch(
     `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}`,
-    { headers: githubHeaders() }
+    { headers: githubHeaders(token) }
   );
 
   if (!response.ok) {
@@ -104,6 +118,7 @@ export const contributionSummaryWorker = new Worker(
         user: {
           select: {
             id: true,
+            githubToken: true,
             skillProfile: {
               select: {
                 id: true,
@@ -133,9 +148,10 @@ export const contributionSummaryWorker = new Worker(
       throw new Error(`User has no skill profile: ${contribution.userId}`);
     }
 
+    const githubToken = getContributionGitHubToken(contribution.user.githubToken);
     const [diffFiles, prBody] = await Promise.all([
-      fetchPrFiles(contribution.repoOwner, contribution.repoName, contribution.prNumber),
-      fetchPrBody(contribution.repoOwner, contribution.repoName, contribution.prNumber),
+      fetchPrFiles(contribution.repoOwner, contribution.repoName, contribution.prNumber, githubToken),
+      fetchPrBody(contribution.repoOwner, contribution.repoName, contribution.prNumber, githubToken),
     ]);
 
     const completion = await groq.chat.completions.create({
@@ -226,10 +242,8 @@ export const contributionSummaryWorker = new Worker(
       });
     });
 
-    const feedKeys = await redis.keys(`feed:${contribution.userId}:*`);
-    if (feedKeys.length > 0) {
-      await redis.del(...feedKeys);
-    }
+    await invalidateUserFeedCaches(contribution.userId, "contribution-summary");
+    await invalidateContributionStats(contribution.userId);
 
     return { contributionId: contribution.id, processed: true };
   },

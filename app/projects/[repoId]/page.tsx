@@ -44,6 +44,7 @@ type ProjectResponse = {
     categories: string[];
     maintainerScore: number;
     activityScore: number;
+    contributionFriendliness: number;
   };
   issueBreakdown: Record<IssueType, number>;
   techStack: string[];
@@ -304,7 +305,7 @@ export default function ProjectPage({
               <MetricBar label="Responsiveness" value={project.repo.maintainerScore} />
               <MetricBar
                 label="Contribution Friendliness"
-                value={(project.repo.activityScore + project.repo.maintainerScore) / 2}
+                value={project.repo.contributionFriendliness}
               />
             </div>
 

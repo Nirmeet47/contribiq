@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/prisma";
+import type { SkillLevel } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
+
+const SKILL_LEVELS = new Set<SkillLevel>(["strong", "moderate", "learning"]);
 
 export async function GET() {
   try {
@@ -69,22 +72,57 @@ export async function PATCH(request: Request) {
     }
 
     const body = await request.json();
-    const newSkills = body.skills as Array<{ name: string, level: "strong" | "moderate" | "learning" }>;
+    const incomingSkills = body.skills;
 
-    // We will update the levels of existing skills. 
-    // In a full implementation, you'd handle creates/deletes properly, but for the drag & drop edit,
-    // updating the level of existing matched skills is the main goal.
-    for (const skill of newSkills) {
-      await prisma.skill.updateMany({
-        where: {
-          skillProfileId: dbUser.skillProfile.id,
-          name: skill.name
-        },
-        data: {
-          level: skill.level
-        }
-      });
+    if (!Array.isArray(incomingSkills)) {
+      return NextResponse.json({ error: "Invalid skills payload" }, { status: 400 });
     }
+
+    const skillsByName = new Map<string, { name: string; level: SkillLevel }>();
+    for (const skill of incomingSkills) {
+      const name = typeof skill?.name === "string" ? skill.name.trim() : "";
+      const level = skill?.level as SkillLevel;
+
+      if (!name || !SKILL_LEVELS.has(level)) {
+        return NextResponse.json({ error: "Invalid skills payload" }, { status: 400 });
+      }
+
+      skillsByName.set(name.toLowerCase(), { name, level });
+    }
+
+    const skills = [...skillsByName.values()];
+    const skillNames = skills.map((skill) => skill.name);
+    const skillProfileId = dbUser.skillProfile.id;
+
+    await prisma.$transaction([
+      prisma.skill.deleteMany({
+        where: {
+          skillProfileId,
+          name: { notIn: skillNames },
+        },
+      }),
+      ...skills.map((skill) =>
+        prisma.skill.upsert({
+          where: {
+            skillProfileId_name: {
+              skillProfileId,
+              name: skill.name,
+            },
+          },
+          create: {
+            skillProfileId,
+            name: skill.name,
+            level: skill.level,
+            confidence: 0.5,
+            repoCount: 0,
+            commitCount: 0,
+          },
+          update: {
+            level: skill.level,
+          },
+        })
+      ),
+    ]);
 
     return NextResponse.json({ success: true });
   } catch (e) {

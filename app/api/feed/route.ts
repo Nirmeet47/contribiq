@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { invalidateAllFeedCaches } from "@/lib/feed-cache";
+import { getAppGitHubToken } from "@/lib/github-token";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
 import { createClient } from "@/utils/supabase/server";
@@ -11,6 +13,33 @@ const feedQuerySchema = z.object({
   issueType: z.enum(["bug", "feature", "docs", "refactor"]).optional(),
   sort: z.enum(["desc", "asc"]).default("desc"),
 });
+
+const ISSUE_VALIDATION_STALE_MS = 60 * 60 * 1000;
+const MAX_STALE_ISSUES_TO_VALIDATE = 5;
+
+type FeedMatch = {
+  issue: {
+    id: string;
+    state: "open" | "closed";
+    updatedAt: Date;
+    githubUrl: string;
+    repo: {
+      id: string;
+      owner: string;
+      name: string;
+    };
+  };
+};
+
+type GitHubIssueResponse = {
+  state?: "open" | "closed";
+  title?: string;
+  body?: string | null;
+  labels?: Array<{ name?: string }>;
+  assignees?: unknown[];
+  comments?: number;
+  html_url?: string;
+};
 
 async function getDbUser() {
   const supabase = await createClient();
@@ -28,6 +57,103 @@ async function getDbUser() {
     where: { githubId: parseInt(githubIdStr, 10) },
     select: { id: true },
   });
+}
+
+function issueNumberFromUrl(url: string) {
+  const match = url.match(/\/issues\/(\d+)(?:[#?].*)?$/);
+  return match ? Number(match[1]) : null;
+}
+
+function githubIssueHeaders() {
+  const token = getAppGitHubToken();
+
+  return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+}
+
+async function fetchGitHubIssue(owner: string, name: string, issueUrl: string) {
+  const issueNumber = issueNumberFromUrl(issueUrl);
+  if (!issueNumber) return null;
+
+  try {
+    const response = await fetch(
+      `https://api.github.com/repos/${owner}/${name}/issues/${issueNumber}`,
+      { headers: githubIssueHeaders() }
+    );
+
+    if (!response.ok) return null;
+
+    return (await response.json()) as GitHubIssueResponse;
+  } catch (error) {
+    console.warn("[feed] Failed to lazily validate GitHub issue state", { error });
+    return null;
+  }
+}
+
+async function validateStaleIssues<T extends FeedMatch>(matches: T[]) {
+  const now = Date.now();
+  const staleMatches = matches
+    .filter((match) => now - match.issue.updatedAt.getTime() > ISSUE_VALIDATION_STALE_MS)
+    .slice(0, MAX_STALE_ISSUES_TO_VALIDATE);
+
+  if (staleMatches.length === 0) return matches;
+
+  const closedIssueIds = new Set<string>();
+
+  for (const match of staleMatches) {
+    const latest = await fetchGitHubIssue(
+      match.issue.repo.owner,
+      match.issue.repo.name,
+      match.issue.githubUrl
+    );
+
+    if (!latest?.state) continue;
+
+    const latestState = latest.state === "closed" ? "closed" : "open";
+    if (latestState === match.issue.state) continue;
+
+    await prisma.issue.update({
+      where: { id: match.issue.id },
+      data: {
+        state: latestState,
+        title: typeof latest.title === "string" ? latest.title : undefined,
+        body:
+          typeof latest.body === "string" || latest.body === null
+            ? latest.body
+            : undefined,
+        labels: latest.labels
+          ?.map((label) => label.name)
+          .filter((name): name is string => Boolean(name)),
+        assigneeCount: Array.isArray(latest.assignees) ? latest.assignees.length : undefined,
+        commentCount: typeof latest.comments === "number" ? latest.comments : undefined,
+        githubUrl: typeof latest.html_url === "string" ? latest.html_url : undefined,
+      },
+    });
+
+    try {
+      await redis.del(`issue:${match.issue.id}`);
+      await redis.del(`project:${match.issue.repo.id}`);
+    } catch (error) {
+      console.error("[feed] Failed to invalidate validated issue caches", {
+        issueId: match.issue.id,
+        repoId: match.issue.repo.id,
+        error,
+      });
+    }
+
+    if (latestState === "closed") {
+      closedIssueIds.add(match.issue.id);
+    }
+  }
+
+  if (closedIssueIds.size > 0) {
+    await invalidateAllFeedCaches("lazy-issue-state-validation");
+  }
+
+  return matches.filter((match) => !closedIssueIds.has(match.issue.id));
 }
 
 export async function GET(request: Request) {
@@ -60,6 +186,7 @@ export async function GET(request: Request) {
     where: {
       userId: dbUser.id,
       issue: {
+        state: "open",
         ...(difficulty ? { difficulty } : {}),
         ...(issueType ? { issueType } : {}),
         feedback: {
@@ -78,6 +205,8 @@ export async function GET(request: Request) {
       issue: {
         select: {
           id: true,
+          state: true,
+          updatedAt: true,
           title: true,
           aiSummary: true,
           difficulty: true,
@@ -106,8 +235,10 @@ export async function GET(request: Request) {
     },
   });
 
+  const visibleMatches = await validateStaleIssues(matches);
+
   const payload = {
-    matches: matches.map((match) => ({
+    matches: visibleMatches.map((match) => ({
       id: match.id,
       score: match.score,
       skillSim: match.skillSim,

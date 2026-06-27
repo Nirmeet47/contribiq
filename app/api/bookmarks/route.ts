@@ -75,3 +75,29 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ bookmark });
 }
+
+export async function DELETE(request: Request) {
+  const userId = await getDbUserId();
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const parsed = bookmarkSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json({ error: z.treeifyError(parsed.error) }, { status: 400 });
+  }
+
+  await prisma.bookmark.deleteMany({
+    where: {
+      userId,
+      issueId: parsed.data.issueId,
+    },
+  });
+
+  const cacheKeys = await redis.keys(`feed:${userId}:*`);
+  if (cacheKeys.length > 0) {
+    await redis.del(...cacheKeys);
+  }
+
+  return NextResponse.json({ success: true });
+}

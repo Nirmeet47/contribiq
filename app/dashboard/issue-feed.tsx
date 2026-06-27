@@ -9,7 +9,7 @@ import {
   ThumbsDown,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type Difficulty = "beginner" | "intermediate" | "advanced";
 type IssueType = "bug" | "feature" | "docs" | "refactor";
@@ -140,20 +140,35 @@ async function fetchFeed({
 
 function IssueCard({ match }: { match: FeedMatch }) {
   const queryClient = useQueryClient();
+  const [bookmarked, setBookmarked] = useState(match.issue.bookmarked);
   const percent = Math.round(match.score * 100);
   const logoUrl = `https://github.com/${match.issue.repo.owner}.png`;
   const responsiveness = responsivenessTone(match.issue.repo.maintainerScore);
 
+  useEffect(() => {
+    setBookmarked(match.issue.bookmarked);
+  }, [match.issue.bookmarked]);
+
   const bookmarkMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (nextBookmarked: boolean) => {
       const response = await fetch("/api/bookmarks", {
-        method: "POST",
+        method: nextBookmarked ? "POST" : "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ issueId: match.issue.id }),
       });
-      if (!response.ok) throw new Error("Failed to bookmark issue");
+      if (!response.ok) throw new Error("Failed to update bookmark");
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["feed"] }),
+    onMutate: (nextBookmarked) => {
+      setBookmarked(nextBookmarked);
+      return { previousBookmarked: bookmarked };
+    },
+    onError: (_error, _nextBookmarked, context) => {
+      if (context) setBookmarked(context.previousBookmarked);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["feed"] });
+      queryClient.invalidateQueries({ queryKey: ["bookmarks"] });
+    },
   });
 
   const feedbackMutation = useMutation({
@@ -242,13 +257,13 @@ function IssueCard({ match }: { match: FeedMatch }) {
         <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
-            onClick={() => bookmarkMutation.mutate()}
+            onClick={() => bookmarkMutation.mutate(!bookmarked)}
             disabled={bookmarkMutation.isPending}
             className="rounded-sm border border-zinc-800 bg-zinc-900 p-2 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-white disabled:opacity-50"
-            aria-label="Bookmark issue"
-            title="Bookmark"
+            aria-label={bookmarked ? "Remove bookmark" : "Bookmark issue"}
+            title={bookmarked ? "Remove bookmark" : "Bookmark"}
           >
-            {match.issue.bookmarked ? <BookmarkCheck className="h-4 w-4 text-emerald-400" /> : <Bookmark className="h-4 w-4" />}
+            {bookmarked ? <BookmarkCheck className="h-4 w-4 text-emerald-400" /> : <Bookmark className="h-4 w-4" />}
           </button>
           <button
             type="button"

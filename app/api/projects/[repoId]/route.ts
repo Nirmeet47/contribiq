@@ -1,20 +1,21 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
+import { normalizeTechName } from "@/lib/tech-names";
 
 export const dynamic = "force-dynamic";
 
 type IssueType = "bug" | "feature" | "docs" | "refactor";
 
 const ISSUE_TYPES: IssueType[] = ["bug", "feature", "docs", "refactor"];
-
-const SKILL_NAME_LOOKUP: Record<string, string> = {
-  next: "Next.js",
-  react: "React",
-  tailwindcss: "Tailwind CSS",
-  prisma: "Prisma",
-  "@supabase/supabase-js": "Supabase",
-};
+const BEGINNER_FRIENDLY_LABELS = new Set([
+  "beginner",
+  "first-timers-only",
+  "good first issue",
+  "good-first-issue",
+  "help-wanted",
+  "help wanted",
+]);
 
 function githubHeaders() {
   return {
@@ -24,18 +25,6 @@ function githubHeaders() {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
   };
-}
-
-function cleanPackageName(name: string) {
-  const normalized = SKILL_NAME_LOOKUP[name.toLowerCase()];
-  if (normalized) return normalized;
-
-  return name
-    .replace(/^@/, "")
-    .split("/")
-    .pop()!
-    .replace(/[-_]/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function extractRequirementName(line: string) {
@@ -78,7 +67,7 @@ async function fetchTechStack(owner: string, name: string) {
       ...Object.keys(parsed.devDependencies ?? {}),
     ];
 
-    return Array.from(new Set(packageNames.map(cleanPackageName))).slice(0, 12);
+    return Array.from(new Set(packageNames.map(normalizeTechName).filter(Boolean))).slice(0, 12);
   }
 
   const requirements = await fetchGithubContent(owner, name, "requirements.txt");
@@ -89,7 +78,27 @@ async function fetchTechStack(owner: string, name: string) {
     .map(extractRequirementName)
     .filter((value): value is string => Boolean(value));
 
-  return Array.from(new Set(packages.map(cleanPackageName))).slice(0, 12);
+  return Array.from(new Set(packages.map(normalizeTechName).filter(Boolean))).slice(0, 12);
+}
+
+function calculateContributionFriendliness({
+  openIssueLabels,
+  maintainerScore,
+}: {
+  openIssueLabels: string[][];
+  maintainerScore: number;
+}) {
+  if (openIssueLabels.length === 0) return 0;
+
+  const beginnerFriendlyCount = openIssueLabels.filter((labels) =>
+    labels.some((label) => BEGINNER_FRIENDLY_LABELS.has(label.trim().toLowerCase()))
+  ).length;
+  const beginnerFriendlyRatio = beginnerFriendlyCount / openIssueLabels.length;
+
+  return Math.max(
+    0,
+    Math.min(1, beginnerFriendlyRatio * 0.7 + maintainerScore * 0.3)
+  );
 }
 
 export async function GET(
@@ -101,7 +110,10 @@ export async function GET(
   const cached = await redis.get(cacheKey);
 
   if (cached) {
-    return NextResponse.json(JSON.parse(cached));
+    const cachedPayload = JSON.parse(cached);
+    if (typeof cachedPayload?.repo?.contributionFriendliness === "number") {
+      return NextResponse.json(cachedPayload);
+    }
   }
 
   const repo = await prisma.repo.findUnique({
@@ -123,7 +135,7 @@ export async function GET(
     return NextResponse.json({ error: "Repo not found" }, { status: 404 });
   }
 
-  const [groupedIssues, techStack, openIssues] = await Promise.all([
+  const [groupedIssues, techStack, openIssues, openIssueLabels] = await Promise.all([
     prisma.issue.groupBy({
       by: ["issueType"],
       where: { repoId, state: "open", classified: true },
@@ -145,6 +157,10 @@ export async function GET(
         requiredSkills: true,
       },
     }),
+    prisma.issue.findMany({
+      where: { repoId, state: "open" },
+      select: { labels: true },
+    }),
   ]);
 
   const issueBreakdown = ISSUE_TYPES.reduce<Record<IssueType, number>>(
@@ -162,7 +178,13 @@ export async function GET(
   }
 
   const payload = {
-    repo,
+    repo: {
+      ...repo,
+      contributionFriendliness: calculateContributionFriendliness({
+        openIssueLabels: openIssueLabels.map((issue) => issue.labels),
+        maintainerScore: repo.maintainerScore,
+      }),
+    },
     issueBreakdown,
     techStack,
     openIssues,

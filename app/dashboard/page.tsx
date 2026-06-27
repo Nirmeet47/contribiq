@@ -372,7 +372,13 @@ export default function DashboardPage() {
                 {skill.name}
                 {!editMode && <span className="text-[10px] opacity-60">{config.label}</span>}
                 {editMode && (
-                  <button onClick={() => setSkills((p) => p.filter((s) => s.name !== skill.name))} className="ml-1 opacity-50 hover:opacity-100 transition-opacity">
+                  <button
+                    type="button"
+                    onClick={() => setSkills((p) => p.filter((s) => s.name !== skill.name))}
+                    className="ml-1 opacity-50 transition-opacity hover:opacity-100"
+                    aria-label={`Remove ${skill.name}`}
+                    title={`Remove ${skill.name}`}
+                  >
                     <X className="h-3 w-3" />
                   </button>
                 )}
@@ -390,7 +396,7 @@ export default function DashboardPage() {
                 placeholder="Add a skill…"
                 className="flex-1 rounded-sm border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-300 placeholder:text-zinc-600 focus:border-zinc-700 focus:outline-none"
               />
-              <button onClick={() => handleAddSkill(level)} className={`flex items-center gap-1 rounded-sm border px-3 py-1.5 text-xs font-bold transition-colors ${config.border} ${config.text} hover:${config.bg}`}>
+              <button type="button" onClick={() => handleAddSkill(level)} className={`flex items-center gap-1 rounded-sm border px-3 py-1.5 text-xs font-bold transition-colors ${config.border} ${config.text} hover:${config.bg}`}>
                 <Plus className="h-3 w-3" /> Add
               </button>
             </div>

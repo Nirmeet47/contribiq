@@ -32,7 +32,24 @@ type BookmarksResponse = {
 
 type ContributionStatsResponse = {
   totalPRs: number;
+  currentStreak?: number;
   longestStreak: number;
+};
+
+type TrendingRepo = {
+  id: string;
+  owner: string;
+  name: string;
+  fullName: string;
+  description: string | null;
+  language: string | null;
+  stars: number;
+  categories: string[];
+  activityScore: number;
+};
+
+type TrendingReposResponse = {
+  repos: TrendingRepo[];
 };
 
 async function fetchMe() {
@@ -53,11 +70,11 @@ async function fetchContributionStats() {
   return (await response.json()) as ContributionStatsResponse;
 }
 
-const TRENDING_REPOS = [
-  { name: "vercel/next.js", meta: "React framework", stars: "132k" },
-  { name: "supabase/supabase", meta: "Backend platform", stars: "89k" },
-  { name: "prisma/prisma", meta: "Database toolkit", stars: "44k" },
-];
+async function fetchTrendingRepos() {
+  const response = await fetch("/api/repos/trending");
+  if (!response.ok) throw new Error("Failed to load trending repos");
+  return (await response.json()) as TrendingReposResponse;
+}
 
 const LEVEL_STYLES: Record<SkillLevel, string> = {
   strong: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
@@ -69,6 +86,12 @@ function titleCase(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function formatStars(value: number) {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}m`;
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
+  return value.toString();
+}
+
 export function RightSidebar() {
   const meQuery = useQuery({ queryKey: ["me"], queryFn: fetchMe });
   const bookmarksQuery = useQuery({
@@ -78,6 +101,10 @@ export function RightSidebar() {
   const contributionStatsQuery = useQuery({
     queryKey: ["contributions-stats"],
     queryFn: fetchContributionStats,
+  });
+  const trendingReposQuery = useQuery({
+    queryKey: ["trending-repos"],
+    queryFn: fetchTrendingRepos,
   });
 
   const topSkills = (meQuery.data?.skillProfile?.skills ?? [])
@@ -152,7 +179,7 @@ export function RightSidebar() {
             },
             {
               label: "Streak",
-              value: contributionStatsQuery.data?.longestStreak ?? 0,
+              value: contributionStatsQuery.data?.currentStreak ?? 0,
               icon: Flame,
             },
           ].map((stat) => {
@@ -170,23 +197,46 @@ export function RightSidebar() {
         <section className="space-y-3">
           <h2 className="text-sm font-bold text-zinc-100">Trending in your stack</h2>
           <div className="space-y-2">
-            {TRENDING_REPOS.map((repo) => (
-              <article
-                key={repo.name}
-                className="rounded-sm border border-zinc-800 bg-zinc-950 p-3 transition-colors hover:border-zinc-700"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="truncate text-sm font-bold text-zinc-200">{repo.name}</h3>
-                    <p className="text-xs font-medium text-zinc-500">{repo.meta}</p>
+            {trendingReposQuery.isLoading ? (
+              [1, 2, 3].map((item) => (
+                <div
+                  key={item}
+                  className="h-[74px] animate-pulse rounded-sm border border-zinc-800 bg-zinc-900/40"
+                />
+              ))
+            ) : trendingReposQuery.data?.repos.length === 0 ? (
+              <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-3">
+                <p className="text-xs font-medium leading-5 text-zinc-500">
+                  No stack-matched repositories yet.
+                </p>
+              </div>
+            ) : trendingReposQuery.isError ? (
+              <div className="rounded-sm border border-red-500/30 bg-red-500/10 p-3">
+                <p className="text-xs font-medium leading-5 text-red-300">
+                  Trending repositories could not be loaded.
+                </p>
+              </div>
+            ) : (
+              trendingReposQuery.data?.repos.map((repo) => (
+                <article
+                  key={repo.id}
+                  className="rounded-sm border border-zinc-800 bg-zinc-950 p-3 transition-colors hover:border-zinc-700"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-bold text-zinc-200">{repo.fullName}</h3>
+                      <p className="truncate text-xs font-medium text-zinc-500">
+                        {repo.description || repo.language || repo.categories[0] || "Repository"}
+                      </p>
+                    </div>
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-zinc-800 bg-zinc-900 px-2 py-1 text-[11px] font-medium text-zinc-400">
+                      <GitFork className="h-3 w-3" />
+                      {formatStars(repo.stars)}
+                    </span>
                   </div>
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-zinc-800 bg-zinc-900 px-2 py-1 text-[11px] font-medium text-zinc-400">
-                    <GitFork className="h-3 w-3" />
-                    {repo.stars}
-                  </span>
-                </div>
-              </article>
-            ))}
+                </article>
+              ))
+            )}
           </div>
         </section>
       </div>
