@@ -118,16 +118,21 @@ def upsert_issues(cur, repo_db_id: str, issues: list[dict]) -> int:
     inserted = 0
     for issue in issues:
         try:
+            raw_labels = issue.get("labels") or []
+            labels = [
+                label.get("name", "") if isinstance(label, dict) else str(label)
+                for label in raw_labels
+            ]
             cur.execute(
                 """
                 INSERT INTO issues (
                     id, "githubId", "repoId", title, body, state,
-                    "assigneeCount", "githubUrl", classified,
+                    labels, "assigneeCount", "githubUrl", classified,
                     "createdAt", "updatedAt"
                 )
                 VALUES (
                     gen_random_uuid()::text, %s, %s, %s, %s, 'open',
-                    %s, %s, false,
+                    %s, %s, %s, false,
                     now(), now()
                 )
                 ON CONFLICT ("githubId", "repoId") DO NOTHING
@@ -137,6 +142,7 @@ def upsert_issues(cur, repo_db_id: str, issues: list[dict]) -> int:
                     repo_db_id,
                     issue["title"][:500],
                     (issue.get("body") or "")[:10000],
+                    labels,
                     len(issue.get("assignees") or []),
                     issue["html_url"],
                 ),
@@ -144,6 +150,7 @@ def upsert_issues(cur, repo_db_id: str, issues: list[dict]) -> int:
             if cur.rowcount > 0:
                 inserted += 1
         except Exception as e:
+            cur.connection.rollback()
             log.error(f"    issue insert error: {e}")
     return inserted
 

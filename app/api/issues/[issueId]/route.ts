@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { appConfig } from "@/lib/app-config";
+import { getAppGitHubToken } from "@/lib/github-token";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
 import { createClient } from "@/utils/supabase/server";
@@ -51,7 +52,7 @@ function issueNumberFromUrl(url: string) {
 
 async function fetchIssueComments(owner: string, repo: string, issueUrl: string) {
   const issueNumber = issueNumberFromUrl(issueUrl);
-  const token = process.env.GITHUB_PAT;
+  const token = getAppGitHubToken();
 
   if (!issueNumber || !token) return [];
 
@@ -161,7 +162,6 @@ async function getUserIssueState(userId: string, issueId: string) {
   return {
     match,
     workersCount,
-    workingOn: Boolean(workingOn),
     isWorking: Boolean(workingOn),
   };
 }

@@ -344,7 +344,7 @@ async def run_skill_profiler(
     groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
     response = groq_client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="llama-3.1-8b-instant",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": _build_user_message(dict(github_data))},
@@ -464,6 +464,10 @@ async def run_skill_profiler(
     finally:
         cur.close()
         conn.close()
+
+    yield {"step": "matching", "message": "Finding your best issues…"}
+    matched = _score_matches_for_user(user_id)
+    _clear_feed_cache(user_id)
 
     yield {
         "step": "done",

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getAppGitHubToken } from "@/lib/github-token";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
 import { normalizeTechName } from "@/lib/tech-names";
@@ -18,10 +19,10 @@ const BEGINNER_FRIENDLY_LABELS = new Set([
 ]);
 
 function githubHeaders() {
+  const token = getAppGitHubToken();
+
   return {
-    ...(process.env.GITHUB_TOKEN
-      ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
-      : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
   };

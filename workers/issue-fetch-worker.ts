@@ -2,6 +2,7 @@ import "dotenv/config";
 
 import { Worker, type ConnectionOptions } from "bullmq";
 import { appConfig } from "@/lib/app-config";
+import { getAppGitHubToken } from "@/lib/github-token";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
 import { issueClassificationQueue } from "@/lib/queues";
@@ -68,9 +69,9 @@ const fetchIssuesQuery = `
 `;
 
 function getGitHubToken() {
-  const token = process.env.GITHUB_PAT;
+  const token = getAppGitHubToken();
   if (!token) {
-    throw new Error("GITHUB_PAT is not set");
+    throw new Error("No GitHub application token is set");
   }
   return token;
 }
