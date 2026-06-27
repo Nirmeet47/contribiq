@@ -128,6 +128,10 @@ async function scoreMatches(scope: { issueId?: string; userId?: string }) {
       WHERE i.classified = true
         AND i.state = 'open'::"IssueState"
         AND i.difficulty IS NOT NULL
+        AND (
+          r.language IS NULL
+          OR lower(r.language) = ANY(uv.known_languages)
+        )
         ${issueFilter}
     )
     INSERT INTO issue_matches (

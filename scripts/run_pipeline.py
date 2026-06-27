@@ -450,7 +450,8 @@ def step3_match(conn):
             elif repo_language in known_languages:
                 lang_penalty = 1.0
             else:
-                lang_penalty = 0.4
+                continue
+
             repo_cats    = {category.lower() for category in (row["categories"] or [])}
             interest_sim = 1.0 if repo_cats & user_interests else 0.0
             if interest_sim == 0.0 and user_interests & {"ai", "ai_ml"}:
