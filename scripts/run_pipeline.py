@@ -362,7 +362,7 @@ def step3_match(conn):
     against all issue embeddings and write scored IssueMatch rows.
 
     Score formula (from issue_match.prisma comments):
-        score = skillSim * 0.65 + interestSim * 0.2 + diffScore * 0.1 + timeFit * 0.05
+        score = (skillSim * langPenalty) * 0.65 + interestSim * 0.2 + diffScore * 0.1 + timeFit * 0.05
 
     timeFit:
         <=4 hrs/week  → prefers ~4h issues
@@ -380,10 +380,13 @@ def step3_match(conn):
     cur.execute(
         """
         SELECT u.id, u.interests, u."timeCommitment",
-               sp.id AS skill_profile_id
+               sp.id AS skill_profile_id,
+               array_agg(DISTINCT lower(s.name)) FILTER (WHERE s."isLanguage" = true) AS known_languages
         FROM   users        u
         JOIN   skill_profiles sp ON sp."userId" = u.id
         JOIN   skill_embeddings se ON se.skill_profile_id = sp.id
+        LEFT JOIN skills s ON s."skillProfileId" = sp.id
+        GROUP BY u.id, u.interests, u."timeCommitment", sp.id
         """
     )
     users = cur.fetchall()
@@ -408,6 +411,7 @@ def step3_match(conn):
                 i.id                                                    AS issue_id,
                 i.difficulty,
                 i."estimatedHours",
+                r.language,
                 r.categories,
                 1 - (ie.embedding <=> se.embedding)                    AS skill_sim
             FROM   issue_embeddings  ie
@@ -427,6 +431,7 @@ def step3_match(conn):
         log.info(f"    {len(scored_issues)} classified issues to score")
 
         user_interests = {interest.lower() for interest in (user["interests"] or [])}
+        known_languages = set(user["known_languages"] or [])
 
         diff_score_map = {
             "beginner":     1.0,
@@ -439,6 +444,13 @@ def step3_match(conn):
 
         for row in scored_issues:
             skill_sim    = float(row["skill_sim"])
+            repo_language = (row["language"] or "").lower()
+            if not repo_language:
+                lang_penalty = 0.85
+            elif repo_language in known_languages:
+                lang_penalty = 1.0
+            else:
+                lang_penalty = 0.4
             repo_cats    = {category.lower() for category in (row["categories"] or [])}
             interest_sim = 1.0 if repo_cats & user_interests else 0.0
             if interest_sim == 0.0 and user_interests & {"ai", "ai_ml"}:
@@ -456,7 +468,7 @@ def step3_match(conn):
                 )
 
             final_score  = round(
-                skill_sim * 0.65 + interest_sim * 0.2 + diff_score * 0.1 + time_fit * 0.05, 4
+                (skill_sim * lang_penalty) * 0.65 + interest_sim * 0.2 + diff_score * 0.1 + time_fit * 0.05, 4
             )
 
             try:
@@ -464,24 +476,25 @@ def step3_match(conn):
                     """
                     INSERT INTO issue_matches (
                         id, "userId", "issueId", score,
-                        "skillSim", "interestSim", "diffScore",
+                        "skillSim", "langPenalty", "interestSim", "diffScore",
                         "createdAt", "updatedAt"
                     )
                     VALUES (
                         gen_random_uuid()::text, %s, %s, %s,
-                        %s, %s, %s,
+                        %s, %s, %s, %s,
                         now(), now()
                     )
                     ON CONFLICT ("userId", "issueId") DO UPDATE SET
                         score        = EXCLUDED.score,
                         "skillSim"   = EXCLUDED."skillSim",
+                        "langPenalty"= EXCLUDED."langPenalty",
                         "interestSim"= EXCLUDED."interestSim",
                         "diffScore"  = EXCLUDED."diffScore",
                         "updatedAt"  = now()
                     """,
                     (
                         user["id"], row["issue_id"], final_score,
-                        skill_sim, interest_sim, diff_score,
+                        skill_sim, lang_penalty, interest_sim, diff_score,
                     ),
                 )
                 matched += 1

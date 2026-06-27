@@ -5,7 +5,7 @@ import { invalidateUserFeedCaches } from "@/lib/feed-cache";
 import { prisma } from "@/lib/prisma";
 import { matchScoringQueue } from "@/lib/queues";
 import type { SkillLevel } from "@prisma/client";
-import { canonicalizeSkills, formatSkillEmbeddingText, skillIdentity } from "@/lib/skills";
+import { canonicalizeSkills, formatSkillEmbeddingText, isLanguageSkill, skillIdentity } from "@/lib/skills";
 
 export const dynamic = "force-dynamic";
 
@@ -132,11 +132,13 @@ export async function PATCH(request: Request) {
             name: skill.name,
             level: skill.level,
             confidence: 0.5,
+            isLanguage: isLanguageSkill(skill.name),
             repoCount: 0,
             commitCount: 0,
           },
           update: {
             level: skill.level,
+            isLanguage: isLanguageSkill(skill.name),
           },
         });
       }

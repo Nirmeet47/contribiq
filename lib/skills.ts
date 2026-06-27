@@ -78,6 +78,33 @@ const ACRONYM_ALIASES: Record<string, string> = {
   url: "URL",
 };
 
+const KNOWN_LANGUAGES = new Set([
+  "typescript",
+  "javascript",
+  "python",
+  "rust",
+  "go",
+  "java",
+  "kotlin",
+  "swift",
+  "c",
+  "c++",
+  "c#",
+  "ruby",
+  "php",
+  "dart",
+  "scala",
+  "elixir",
+  "haskell",
+  "lua",
+  "r",
+  "julia",
+  "zig",
+  "nim",
+  "ocaml",
+  "clojure",
+]);
+
 function aliasKey(value: string) {
   return value
     .trim()
@@ -111,6 +138,10 @@ function splitFallbackTokens(value: string) {
 function titleToken(token: string) {
   const lower = token.toLowerCase();
   return ACRONYM_ALIASES[lower] ?? lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
+export function isLanguageSkill(name: string) {
+  return KNOWN_LANGUAGES.has(name.trim().toLowerCase());
 }
 
 export function normalizeSkillName(value: string) {

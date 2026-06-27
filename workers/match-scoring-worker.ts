@@ -44,7 +44,8 @@ async function scoreMatches(scope: { issueId?: string; userId?: string }) {
         u.interests,
         u."timeCommitment" AS time_commitment,
         se.embedding AS skill_embedding,
-        COALESCE(AVG(s.confidence), 0.5) AS avg_confidence
+        COALESCE(AVG(s.confidence), 0.5) AS avg_confidence,
+        array_agg(DISTINCT lower(s.name)) FILTER (WHERE s."isLanguage" = true) AS known_languages
       FROM users u
       JOIN skill_profiles sp ON sp."userId" = u.id
       JOIN skill_embeddings se ON se.skill_profile_id = sp.id
@@ -93,28 +94,33 @@ async function scoreMatches(scope: { issueId?: string; userId?: string }) {
             END
         END AS diff_score,
         CASE
-          WHEN i."estimatedHours" IS NULL OR i."estimatedHours" <= 0 THEN ${scoreConfig.missingEstimateTimeFitScore}
+          WHEN i."estimatedHours" IS NULL OR i."estimatedHours" <= 0 THEN ${Prisma.raw(String(scoreConfig.missingEstimateTimeFitScore))}
           ELSE GREATEST(
-            ${scoreConfig.minimumTimeFitScore},
+            ${Prisma.raw(String(scoreConfig.minimumTimeFitScore))},
             1 - (
               ABS(
                 i."estimatedHours" - CASE
-                  WHEN uv.time_commitment <= ${scoreConfig.lightTimeCommitmentMaxHours} THEN ${scoreConfig.lightPreferredIssueHours}
-                  WHEN uv.time_commitment <= ${scoreConfig.steadyTimeCommitmentMaxHours} THEN ${scoreConfig.steadyPreferredIssueHours}
-                  ELSE ${scoreConfig.highPreferredIssueHours}
+                  WHEN uv.time_commitment <= ${Prisma.raw(String(scoreConfig.lightTimeCommitmentMaxHours))} THEN ${Prisma.raw(String(scoreConfig.lightPreferredIssueHours))}
+                  WHEN uv.time_commitment <= ${Prisma.raw(String(scoreConfig.steadyTimeCommitmentMaxHours))} THEN ${Prisma.raw(String(scoreConfig.steadyPreferredIssueHours))}
+                  ELSE ${Prisma.raw(String(scoreConfig.highPreferredIssueHours))}
                 END
               ) / GREATEST(
                 i."estimatedHours",
                 CASE
-                  WHEN uv.time_commitment <= ${scoreConfig.lightTimeCommitmentMaxHours} THEN ${scoreConfig.lightPreferredIssueHours}
-                  WHEN uv.time_commitment <= ${scoreConfig.steadyTimeCommitmentMaxHours} THEN ${scoreConfig.steadyPreferredIssueHours}
-                  ELSE ${scoreConfig.highPreferredIssueHours}
+                  WHEN uv.time_commitment <= ${Prisma.raw(String(scoreConfig.lightTimeCommitmentMaxHours))} THEN ${Prisma.raw(String(scoreConfig.lightPreferredIssueHours))}
+                  WHEN uv.time_commitment <= ${Prisma.raw(String(scoreConfig.steadyTimeCommitmentMaxHours))} THEN ${Prisma.raw(String(scoreConfig.steadyPreferredIssueHours))}
+                  ELSE ${Prisma.raw(String(scoreConfig.highPreferredIssueHours))}
                 END,
                 1
               )
             )
           )
-        END AS time_fit_score
+        END AS time_fit_score,
+        CASE
+          WHEN r.language IS NULL THEN ${Prisma.raw("0.85")}
+          WHEN lower(r.language) = ANY(uv.known_languages) THEN ${Prisma.raw("1.0")}
+          ELSE ${Prisma.raw("0.4")}
+        END AS lang_penalty
       FROM user_vectors uv
       CROSS JOIN issue_embeddings ie
       JOIN issues i ON i.id = ie.issue_id
@@ -130,6 +136,7 @@ async function scoreMatches(scope: { issueId?: string; userId?: string }) {
       "issueId",
       score,
       "skillSim",
+      "langPenalty",
       "interestSim",
       "diffScore",
       "createdAt",
@@ -139,11 +146,12 @@ async function scoreMatches(scope: { issueId?: string; userId?: string }) {
       gen_random_uuid()::text,
       user_id,
       issue_id,
-      (skill_sim * ${scoreConfig.skillWeight}) +
-        (interest_sim * ${scoreConfig.interestWeight}) +
-        (diff_score * ${scoreConfig.difficultyWeight}) +
-        (time_fit_score * ${scoreConfig.timeFitWeight}),
+      ((skill_sim * lang_penalty) * ${Prisma.raw(String(scoreConfig.skillWeight))}) +
+        (interest_sim * ${Prisma.raw(String(scoreConfig.interestWeight))}) +
+        (diff_score * ${Prisma.raw(String(scoreConfig.difficultyWeight))}) +
+        (time_fit_score * ${Prisma.raw(String(scoreConfig.timeFitWeight))}),
       skill_sim,
+      lang_penalty,
       interest_sim,
       diff_score,
       now(),
@@ -153,6 +161,7 @@ async function scoreMatches(scope: { issueId?: string; userId?: string }) {
     DO UPDATE SET
       score = EXCLUDED.score,
       "skillSim" = EXCLUDED."skillSim",
+      "langPenalty" = EXCLUDED."langPenalty",
       "interestSim" = EXCLUDED."interestSim",
       "diffScore" = EXCLUDED."diffScore",
       "updatedAt" = now()

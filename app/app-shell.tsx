@@ -16,10 +16,10 @@ import {
 
 const NAV_ITEMS = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-  { label: "Matches", icon: Inbox, href: "/dashboard" },
-  { label: "Skills", icon: BookOpen, href: "/dashboard" },
+  { label: "Matches", icon: Inbox, href: "/matches" },
+  { label: "Skills", icon: BookOpen, href: "/skills" },
   { label: "Contributions", icon: Trophy, href: "/contributions" },
-  { label: "Settings", icon: Settings, href: "/dashboard" },
+  { label: "Settings", icon: Settings, href: "/settings" },
 ];
 
 function isActive(pathname: string, href: string) {

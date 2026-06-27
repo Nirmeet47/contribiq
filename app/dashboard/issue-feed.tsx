@@ -154,10 +154,6 @@ function IssueCard({
   const logoUrl = `https://github.com/${match.issue.repo.owner}.png`;
   const responsiveness = responsivenessTone(match.issue.repo.maintainerScore);
 
-  useEffect(() => {
-    setBookmarked(match.issue.bookmarked);
-  }, [match.issue.bookmarked]);
-
   const bookmarkMutation = useMutation({
     mutationFn: async (nextBookmarked: boolean) => {
       const response = await fetch("/api/bookmarks", {

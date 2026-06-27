@@ -7,6 +7,7 @@ model Skill {
   name           String // "React", "TypeScript", "Node.js", etc.
   level          SkillLevel
   confidence     Float // 0.0 – 1.0
+  isLanguage     Boolean    @default(false) // true for raw languages, false for frameworks/tools
   repoCount      Int        @default(0)
   commitCount    Int        @default(0)
   createdAt      DateTime   @default(now())

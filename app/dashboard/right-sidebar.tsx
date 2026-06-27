@@ -220,9 +220,12 @@ export function RightSidebar() {
               </div>
             ) : (
               trendingReposQuery.data?.repos.map((repo) => (
-                <article
+                <a
                   key={repo.id}
-                  className="rounded-sm border border-zinc-800 bg-zinc-950 p-3 transition-colors hover:border-zinc-700"
+                  href={`https://github.com/${repo.fullName}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block rounded-sm border border-zinc-800 bg-zinc-950 p-3 transition-colors hover:border-zinc-700"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -236,7 +239,7 @@ export function RightSidebar() {
                       {formatStars(repo.stars)}
                     </span>
                   </div>
-                </article>
+                </a>
               ))
             )}
           </div>

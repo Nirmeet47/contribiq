@@ -25,6 +25,16 @@ from agent.skill_canonical import canonicalize_skills, format_skill_embedding_te
 
 logger = logging.getLogger("agent.skill_profiler")
 
+KNOWN_LANGUAGES = {
+    "typescript", "javascript", "python", "rust", "go", "java", "kotlin",
+    "swift", "c", "c++", "c#", "ruby", "php", "dart", "scala", "elixir",
+    "haskell", "lua", "r", "julia", "zig", "nim", "ocaml", "clojure",
+}
+
+
+def _is_language_skill(name: str) -> bool:
+    return name.strip().lower() in KNOWN_LANGUAGES
+
 
 class ParsedSkill(BaseModel):
     name: str
@@ -176,13 +186,13 @@ def _score_matches_for_user(user_id: str) -> int:
                     u.interests,
                     u."timeCommitment" AS time_commitment,
                     se.embedding AS skill_embedding,
-                    COALESCE(AVG(s.confidence), 0.5) AS avg_confidence
+                    COALESCE(AVG(s.confidence), 0.5) AS avg_confidence,
+                    array_agg(DISTINCT lower(s.name)) FILTER (WHERE s."isLanguage" = true) AS known_languages
                 FROM users u
                 JOIN skill_profiles sp ON sp."userId" = u.id
                 JOIN skill_embeddings se ON se.skill_profile_id = sp.id
                 LEFT JOIN skills s ON s."skillProfileId" = sp.id
-                WHERE u.onboarded = true
-                  AND u.id = %s
+                WHERE u.id = %s
                 GROUP BY u.id, u.interests, u."timeCommitment", se.embedding
             ),
             scored AS (
@@ -250,7 +260,12 @@ def _score_matches_for_user(user_id: str) -> int:
                                 )
                             )
                         )
-                    END AS time_fit_score
+                    END AS time_fit_score,
+                    CASE
+                        WHEN r.language IS NULL THEN 0.85
+                        WHEN lower(r.language) = ANY(uv.known_languages) THEN 1.0
+                        ELSE 0.4
+                    END AS lang_penalty
                 FROM user_vectors uv
                 CROSS JOIN issue_embeddings ie
                 JOIN issues i ON i.id = ie.issue_id
@@ -261,15 +276,16 @@ def _score_matches_for_user(user_id: str) -> int:
             )
             INSERT INTO issue_matches (
                 id, "userId", "issueId", score,
-                "skillSim", "interestSim", "diffScore",
+                "skillSim", "langPenalty", "interestSim", "diffScore",
                 "createdAt", "updatedAt"
             )
             SELECT
                 gen_random_uuid()::text,
                 user_id,
                 issue_id,
-                (skill_sim * 0.65) + (interest_sim * 0.2) + (diff_score * 0.1) + (time_fit_score * 0.05),
+                ((skill_sim * lang_penalty) * 0.65) + (interest_sim * 0.2) + (diff_score * 0.1) + (time_fit_score * 0.05),
                 skill_sim,
+                lang_penalty,
                 interest_sim,
                 diff_score,
                 now(),
@@ -279,6 +295,7 @@ def _score_matches_for_user(user_id: str) -> int:
             DO UPDATE SET
                 score = EXCLUDED.score,
                 "skillSim" = EXCLUDED."skillSim",
+                "langPenalty" = EXCLUDED."langPenalty",
                 "interestSim" = EXCLUDED."interestSim",
                 "diffScore" = EXCLUDED."diffScore",
                 "updatedAt" = now()
@@ -397,12 +414,13 @@ async def run_skill_profiler(
                 """
                 INSERT INTO skills (
                     id, "skillProfileId", name, level, confidence,
-                    "repoCount", "commitCount", "createdAt", "updatedAt"
+                    "isLanguage", "repoCount", "commitCount", "createdAt", "updatedAt"
                 )
-                VALUES (gen_random_uuid()::text, %s, %s, %s, %s, %s, %s, now(), now())
+                VALUES (gen_random_uuid()::text, %s, %s, %s, %s, %s, %s, %s, now(), now())
                 ON CONFLICT ("skillProfileId", name) DO UPDATE SET
                     level        = EXCLUDED.level,
                     confidence   = EXCLUDED.confidence,
+                    "isLanguage" = EXCLUDED."isLanguage",
                     "repoCount"  = EXCLUDED."repoCount",
                     "commitCount"= EXCLUDED."commitCount",
                     "updatedAt"  = now()
@@ -412,6 +430,7 @@ async def run_skill_profiler(
                     skill.name,
                     skill.level,
                     skill.confidence,
+                    _is_language_skill(skill.name),
                     skill.repoCount,
                     skill.commitCount,
                 ),
