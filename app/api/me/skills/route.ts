@@ -3,7 +3,6 @@ import { createClient } from "@/utils/supabase/server";
 import { embed } from "@/lib/embeddings";
 import { invalidateUserFeedCaches } from "@/lib/feed-cache";
 import { prisma } from "@/lib/prisma";
-import { matchScoringQueue } from "@/lib/queues";
 import type { SkillLevel } from "@prisma/client";
 import { canonicalizeSkills, formatSkillEmbeddingText, isLanguageSkill, skillIdentity } from "@/lib/skills";
 
@@ -167,6 +166,7 @@ export async function PATCH(request: Request) {
     await invalidateUserFeedCaches(dbUser.id, "skills-updated");
 
     try {
+      const { matchScoringQueue } = await import("@/lib/queues");
       await matchScoringQueue.add("score-matches", { userId: dbUser.id });
     } catch (error) {
       console.error("[api/me/skills] Failed to enqueue match scoring after skill edit", {

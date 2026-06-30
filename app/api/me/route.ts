@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { encryptGithubToken } from "@/lib/github-token";
-import { matchScoringQueue } from "@/lib/queues";
 import { canonicalizeSkills } from "@/lib/skills";
+import type { CanonicalSkillInput } from "@/lib/skills";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
@@ -20,7 +20,12 @@ function omitGithubToken<T extends { githubToken?: string | null }>(user: T) {
   return safeUser;
 }
 
-function formatSafeUser<T extends { githubToken?: string | null; skillProfile?: { skills?: any[] } | null }>(
+function metadataString(metadata: Record<string, unknown> | undefined, key: string) {
+  const value = metadata?.[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function formatSafeUser<T extends { githubToken?: string | null; skillProfile?: { skills?: CanonicalSkillInput[] } | null }>(
   dbUser: T
 ) {
   return omitGithubToken({
@@ -36,9 +41,9 @@ function formatSafeUser<T extends { githubToken?: string | null; skillProfile?: 
 
 async function recoverDbUserFromSession(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  user: { user_metadata?: Record<string, any>; email?: string }
+  user: { user_metadata?: Record<string, unknown>; email?: string }
 ) {
-  const githubIdStr = user.user_metadata?.provider_id;
+  const githubIdStr = metadataString(user.user_metadata, "provider_id");
   const githubId = githubIdStr ? Number.parseInt(githubIdStr, 10) : null;
 
   if (!githubId || Number.isNaN(githubId)) {
@@ -54,8 +59,8 @@ async function recoverDbUserFromSession(
   }
 
   const usernameBase =
-    user.user_metadata?.user_name ||
-    user.user_metadata?.preferred_username ||
+    metadataString(user.user_metadata, "user_name") ||
+    metadataString(user.user_metadata, "preferred_username") ||
     user.email?.split("@")[0] ||
     `user_${githubId}`;
   const username = String(usernameBase).trim() || `user_${githubId}`;
@@ -79,15 +84,15 @@ async function recoverDbUserFromSession(
     where: { githubId },
     update: {
       username: safeUsername,
-      name: user.user_metadata?.full_name || null,
-      avatarUrl: user.user_metadata?.avatar_url || null,
+      name: metadataString(user.user_metadata, "full_name") || null,
+      avatarUrl: metadataString(user.user_metadata, "avatar_url") || null,
       ...(githubToken ? { githubToken } : {}),
     },
     create: {
       githubId,
       username: safeUsername,
-      name: user.user_metadata?.full_name || null,
-      avatarUrl: user.user_metadata?.avatar_url || null,
+      name: metadataString(user.user_metadata, "full_name") || null,
+      avatarUrl: metadataString(user.user_metadata, "avatar_url") || null,
       githubToken,
       onboarded: false,
       profileAnalyzed: false,
@@ -239,6 +244,7 @@ export async function PATCH(request: Request) {
 
     if (body.onboarded === true && !existingUser.onboarded && updatedUser.onboarded) {
       try {
+        const { matchScoringQueue } = await import("@/lib/queues");
         await matchScoringQueue.add("score-matches", { userId: updatedUser.id });
       } catch (error) {
         console.error("[api/me] Failed to enqueue match scoring after onboarding", {

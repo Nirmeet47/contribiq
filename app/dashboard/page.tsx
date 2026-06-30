@@ -35,6 +35,16 @@ interface DbUser {
 
 type ViewState = "loading" | "onboarding" | "skills_review" | "interests" | "time_commitment" | "dashboard"
 
+async function readJson<T>(response: Response): Promise<T> {
+  const contentType = response.headers.get("content-type") ?? ""
+
+  if (!contentType.includes("application/json")) {
+    throw new Error(`Expected JSON from ${response.url || "request"}, got ${contentType || "unknown content type"}`)
+  }
+
+  return (await response.json()) as T
+}
+
 // -- Configs --
 const STEP_META: Record<string, { icon: React.ReactNode; label: string }> = {
   fetching: { icon: <GitMerge className="h-5 w-5" />, label: "Fetching GitHub Data" },
@@ -116,7 +126,13 @@ export default function DashboardPage() {
   async function fetchSkills() {
     try {
       const r = await fetch("/api/me/skills")
-      const data = await r.json()
+      if (r.status === 401) {
+        window.location.href = "/login"
+        return
+      }
+      if (!r.ok) throw new Error(`Failed to fetch skills: ${r.status}`)
+
+      const data = await readJson<{ skills?: Skill[]; summary?: typeof summary }>(r)
       setSkills(data.skills ?? [])
       if (data.summary) {
         setSummary(data.summary)
@@ -138,12 +154,18 @@ export default function DashboardPage() {
 
       try {
         const res = await fetch("/api/me")
-        const data = await res.json()
+        if (res.status === 401) {
+          window.location.href = "/login"
+          return
+        }
+        if (!res.ok) throw new Error(`Failed to load DB user: ${res.status}`)
+
+        const data = await readJson<DbUser & { error?: unknown }>(res)
         if (data && !data.error) {
           setDbUser(data)
           if (data.onboarded === false) {
             setSelectedInterests(data.interests ?? [])
-            setSelectedTimeCommitment(data.timeCommitment > 0 ? data.timeCommitment : null)
+            setSelectedTimeCommitment(data.timeCommitment && data.timeCommitment > 0 ? data.timeCommitment : null)
 
             if (data.profileAnalyzed) {
               await fetchSkills()
@@ -165,12 +187,15 @@ export default function DashboardPage() {
   }, [])
 
   // 2. Trigger SSE if in onboarding state
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (viewState !== "onboarding" || sseStarted.current) return
 
     if (dbUser?.onboarded) {
-      fetchSkills()
-      setViewState("dashboard")
+      void Promise.resolve().then(async () => {
+        await fetchSkills()
+        setViewState("dashboard")
+      })
       return
     }
 
@@ -221,6 +246,7 @@ export default function DashboardPage() {
       }
     }
   }, [viewState, sseRetryToken, dbUser?.onboarded])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const retryOnboardingAnalysis = () => {
     if (dbUser?.onboarded) {
