@@ -53,7 +53,7 @@ async function getDbUser() {
 
   return prisma.user.findUnique({
     where: { githubId: parseInt(githubIdStr, 10) },
-    select: { id: true },
+    select: { id: true, interests: true, timeCommitment: true },
   });
 }
 
@@ -161,6 +161,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if ((dbUser.interests?.length ?? 0) === 0 || dbUser.timeCommitment <= 0) {
+    return NextResponse.json({
+      matches: [],
+      reason: "profile_incomplete",
+    });
+  }
+
   const { searchParams } = new URL(request.url);
   const parsed = feedQuerySchema.safeParse({
     difficulty: searchParams.get("difficulty") || undefined,
@@ -173,7 +180,7 @@ export async function GET(request: Request) {
   }
 
   const { difficulty, issueType, sort } = parsed.data;
-  const cacheKey = `feed:${dbUser.id}:${difficulty ?? "all"}:${issueType ?? "all"}:${sort}`;
+  const cacheKey = `feed:v3:${dbUser.id}:${difficulty ?? "all"}:${issueType ?? "all"}:${sort}:${appConfig.feedMinScore}:${appConfig.feedSkillOnlyMinScore}`;
   const cached = await redis.get(cacheKey);
 
   if (cached) {
@@ -183,6 +190,11 @@ export async function GET(request: Request) {
   const matches = await prisma.issueMatch.findMany({
     where: {
       userId: dbUser.id,
+      score: { gte: appConfig.feedMinScore },
+      OR: [
+        { interestSim: { gt: 0 } },
+        { score: { gte: appConfig.feedSkillOnlyMinScore } },
+      ],
       issue: {
         state: "open",
         ...(difficulty ? { difficulty } : {}),

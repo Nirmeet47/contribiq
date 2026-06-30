@@ -71,15 +71,26 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const githubId = parseInt(user.user_metadata?.provider_id, 10);
+    const githubIdStr = user.user_metadata?.provider_id;
+    if (!githubIdStr) {
+      return NextResponse.json({ error: "No GitHub ID" }, { status: 400 });
+    }
+
+    const githubId = parseInt(githubIdStr, 10);
     const dbUser = await prisma.user.findUnique({
       where: { githubId },
       include: { skillProfile: true }
     });
 
-    if (!dbUser || !dbUser.skillProfile) {
+    if (!dbUser) {
       return NextResponse.json({ error: "Profile not found" }, { status: 404 });
     }
+
+    const skillProfile =
+      dbUser.skillProfile ??
+      (await prisma.skillProfile.create({
+        data: { userId: dbUser.id },
+      }));
 
     const body = await request.json();
     const incomingSkills = body.skills;
@@ -108,7 +119,7 @@ export async function PATCH(request: Request) {
 
     const skills = [...skillsByName.values()];
     const skillNames = skills.map((skill) => skill.name);
-    const skillProfileId = dbUser.skillProfile.id;
+    const skillProfileId = skillProfile.id;
 
     const savedSkills = await prisma.$transaction(async (tx) => {
       await tx.skill.deleteMany({
@@ -155,19 +166,40 @@ export async function PATCH(request: Request) {
       });
     });
 
-    const vector = toVectorLiteral(await embed(formatSkillEmbeddingText(savedSkills)));
-    await prisma.$executeRaw`
-      INSERT INTO skill_embeddings (skill_profile_id, embedding, updated_at)
-      VALUES (${skillProfileId}, ${vector}::vector, now())
-      ON CONFLICT (skill_profile_id)
-      DO UPDATE SET embedding = EXCLUDED.embedding, updated_at = now()
-    `;
+    let embeddingUpdated = false;
+    let cacheInvalidated = false;
+    let matchScoringQueued = false;
 
-    await invalidateUserFeedCaches(dbUser.id, "skills-updated");
+    try {
+      const vector = toVectorLiteral(await embed(formatSkillEmbeddingText(savedSkills)));
+      await prisma.$executeRaw`
+        INSERT INTO skill_embeddings (skill_profile_id, embedding, updated_at)
+        VALUES (${skillProfileId}, ${vector}::vector, now())
+        ON CONFLICT (skill_profile_id)
+        DO UPDATE SET embedding = EXCLUDED.embedding, updated_at = now()
+      `;
+      embeddingUpdated = true;
+    } catch (error) {
+      console.error("[api/me/skills] Failed to update skill embedding after skill edit", {
+        userId: dbUser.id,
+        error,
+      });
+    }
+
+    try {
+      await invalidateUserFeedCaches(dbUser.id, "skills-updated");
+      cacheInvalidated = true;
+    } catch (error) {
+      console.error("[api/me/skills] Failed to invalidate feed caches after skill edit", {
+        userId: dbUser.id,
+        error,
+      });
+    }
 
     try {
       const { matchScoringQueue } = await import("@/lib/queues");
       await matchScoringQueue.add("score-matches", { userId: dbUser.id });
+      matchScoringQueued = true;
     } catch (error) {
       console.error("[api/me/skills] Failed to enqueue match scoring after skill edit", {
         userId: dbUser.id,
@@ -175,7 +207,13 @@ export async function PATCH(request: Request) {
       });
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      skills: savedSkills,
+      embeddingUpdated,
+      cacheInvalidated,
+      matchScoringQueued,
+    });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

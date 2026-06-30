@@ -30,6 +30,13 @@ function interestMatchCondition() {
 }
 
 async function scoreMatches(scope: { issueId?: string; userId?: string }) {
+  await prisma.issueMatch.deleteMany({
+    where: {
+      ...(scope.userId ? { userId: scope.userId } : {}),
+      ...(scope.issueId ? { issueId: scope.issueId } : {}),
+    },
+  });
+
   const userFilter = scope.userId
     ? Prisma.sql`AND u.id = ${scope.userId}`
     : Prisma.empty;

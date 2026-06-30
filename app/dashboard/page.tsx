@@ -163,13 +163,16 @@ export default function DashboardPage() {
         const data = await readJson<DbUser & { error?: unknown }>(res)
         if (data && !data.error) {
           setDbUser(data)
-          if (data.onboarded === false) {
+          const hasInterests = (data.interests?.length ?? 0) > 0
+          const hasTimeCommitment = (data.timeCommitment ?? 0) > 0
+
+          if (data.onboarded === false || !hasInterests || !hasTimeCommitment) {
             setSelectedInterests(data.interests ?? [])
             setSelectedTimeCommitment(data.timeCommitment && data.timeCommitment > 0 ? data.timeCommitment : null)
 
             if (data.profileAnalyzed) {
               await fetchSkills()
-              setViewState(data.interests?.length ? "time_commitment" : "skills_review")
+              setViewState(!hasInterests ? "interests" : !hasTimeCommitment ? "time_commitment" : "skills_review")
             } else {
               setViewState("onboarding")
             }

@@ -3,6 +3,7 @@ import { encryptGithubToken } from "@/lib/github-token";
 import { canonicalizeSkills } from "@/lib/skills";
 import type { CanonicalSkillInput } from "@/lib/skills";
 import { createClient } from "@/utils/supabase/server";
+import { invalidateUserFeedCaches } from "@/lib/feed-cache";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
@@ -218,7 +219,7 @@ export async function PATCH(request: Request) {
     }
 
     if (body.onboarded === true) {
-      const nextInterests = body.interests ?? existingUser.interests;
+      const nextInterests = body.interests ?? existingUser.interests ?? [];
       const nextTimeCommitment = body.timeCommitment ?? existingUser.timeCommitment;
 
       if (!existingUser.profileAnalyzed) {
@@ -242,7 +243,17 @@ export async function PATCH(request: Request) {
       select: { id: true, onboarded: true },
     });
 
-    if (body.onboarded === true && !existingUser.onboarded && updatedUser.onboarded) {
+    const preferencesChanged =
+      body.interests !== undefined || body.timeCommitment !== undefined || body.onboarded !== undefined;
+    const shouldRefreshMatches =
+      (body.onboarded === true && !existingUser.onboarded && updatedUser.onboarded) ||
+      (preferencesChanged && (updatedUser.onboarded || existingUser.onboarded));
+
+    if (preferencesChanged) {
+      await invalidateUserFeedCaches(updatedUser.id, "profile-preferences-updated");
+    }
+
+    if (shouldRefreshMatches) {
       try {
         const { matchScoringQueue } = await import("@/lib/queues");
         await matchScoringQueue.add("score-matches", { userId: updatedUser.id });

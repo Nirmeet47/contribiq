@@ -9,7 +9,7 @@ import {
   ThumbsDown,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 type Difficulty = "beginner" | "intermediate" | "advanced";
 type IssueType = "bug" | "feature" | "docs" | "refactor";
@@ -41,6 +41,7 @@ type FeedMatch = {
 
 type FeedResponse = {
   matches: FeedMatch[];
+  reason?: "profile_incomplete";
 };
 
 const DIFFICULTIES: Difficulty[] = ["beginner", "intermediate", "advanced"];
@@ -379,7 +380,9 @@ export function IssueFeed() {
 
       {feedQuery.data?.matches.length === 0 && (
         <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-8 text-center text-sm font-medium text-zinc-500">
-          No matches yet. Run the match scoring worker after issues are classified.
+          {feedQuery.data.reason === "profile_incomplete"
+            ? "Complete your skills, interests, and time commitment so matches can be personalized."
+            : "No strong matches yet. Update your skills or wait for more issues to be classified and rescored."}
         </div>
       )}
 
