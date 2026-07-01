@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
+import { fetchGitHubContributionStats } from "@/lib/github-contributions";
 import { prisma } from "@/lib/prisma";
-import { redis } from "@/lib/redis";
 import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-async function getDbUserId() {
+async function getDbUser() {
   const supabase = await createClient();
   const {
     data: { user },
@@ -19,10 +19,30 @@ async function getDbUserId() {
 
   const dbUser = await prisma.user.findUnique({
     where: { githubId: parseInt(githubIdStr, 10) },
-    select: { id: true },
+    select: { id: true, username: true, githubToken: true },
   });
 
-  return dbUser?.id ?? null;
+  return dbUser ?? null;
+}
+
+async function getCachedPayload<T>(cacheKey: string) {
+  try {
+    const { redis } = await import("@/lib/redis");
+    const cached = await redis.get(cacheKey);
+    return cached ? (JSON.parse(cached) as T) : null;
+  } catch (error) {
+    console.error("[contributions] Failed to read stats cache", { cacheKey, error });
+    return null;
+  }
+}
+
+async function setCachedPayload(cacheKey: string, payload: unknown) {
+  try {
+    const { redis } = await import("@/lib/redis");
+    await redis.set(cacheKey, JSON.stringify(payload), "EX", 300);
+  } catch (error) {
+    console.error("[contributions] Failed to write stats cache", { cacheKey, error });
+  }
 }
 
 function utcDateString(date: Date) {
@@ -84,19 +104,19 @@ function currentDateStreak(dates: string[]) {
 }
 
 export async function GET() {
-  const userId = await getDbUserId();
-  if (!userId) {
+  const dbUser = await getDbUser();
+  if (!dbUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const cacheKey = `contributions:stats:${userId}`;
-  const cached = await redis.get(cacheKey);
+  const cacheKey = `contributions:stats:${dbUser.id}`;
+  const cached = await getCachedPayload(cacheKey);
   if (cached) {
-    return NextResponse.json(JSON.parse(cached));
+    return NextResponse.json(cached);
   }
 
   const contributions = await prisma.contribution.findMany({
-    where: { userId, processed: true },
+    where: { userId: dbUser.id },
     select: {
       mergedAt: true,
       repoOwner: true,
@@ -123,16 +143,29 @@ export async function GET() {
   const totalReach = repos.reduce((sum, repo) => sum + repo.stars, 0);
 
   const contributionDates = contributions.map((contribution) => utcDateString(contribution.mergedAt));
+  const githubStats = await fetchGitHubContributionStats(dbUser);
+  const streakDates =
+    githubStats && githubStats.contributionDates.length > 0
+      ? githubStats.contributionDates
+      : contributionDates;
 
   const payload = {
-    totalPRs: contributions.length,
-    reposCount: uniqueRepoPairs.size,
-    currentStreak: currentDateStreak(contributionDates),
-    longestStreak: longestDateStreak(contributionDates),
+    source: githubStats ? "github" : "local",
+    totalContributions: githubStats?.totalContributions ?? contributions.length,
+    totalPRs: Math.max(contributions.length, githubStats?.pullRequests ?? 0),
+    localMergedPRs: contributions.length,
+    githubPullRequests: githubStats?.pullRequests ?? null,
+    githubCommits: githubStats?.commits ?? null,
+    githubIssues: githubStats?.issues ?? null,
+    githubReviews: githubStats?.reviews ?? null,
+    restrictedContributions: githubStats?.restricted ?? null,
+    reposCount: Math.max(uniqueRepoPairs.size, githubStats?.repositoriesContributedTo ?? 0),
+    currentStreak: currentDateStreak(streakDates),
+    longestStreak: longestDateStreak(streakDates),
     totalReach,
   };
 
-  await redis.set(cacheKey, JSON.stringify(payload), "EX", 300);
+  await setCachedPayload(cacheKey, payload);
 
   return NextResponse.json(payload);
 }

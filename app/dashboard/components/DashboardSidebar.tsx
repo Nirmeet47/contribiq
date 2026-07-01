@@ -25,7 +25,14 @@ type BookmarksResponse = {
 };
 
 type ContributionStatsResponse = {
+  source?: "github" | "local";
+  totalContributions?: number;
   totalPRs: number;
+  localMergedPRs?: number;
+  githubPullRequests?: number | null;
+  githubCommits?: number | null;
+  githubIssues?: number | null;
+  githubReviews?: number | null;
   currentStreak?: number;
   longestStreak: number;
 };
@@ -74,7 +81,9 @@ export function DashboardSidebar() {
       <div className="space-y-6">
         <SkillRadar skills={topSkills} />
         <DashboardStats
+          totalBookmarks={bookmarksQuery.data?.totalBookmarks ?? bookmarksQuery.data?.count ?? 0}
           weeklyBookmarks={bookmarksQuery.data?.weeklyBookmarks ?? 0}
+          totalContributions={contributionStatsQuery.data?.totalContributions ?? contributionStatsQuery.data?.totalPRs ?? 0}
           totalPRs={contributionStatsQuery.data?.totalPRs ?? 0}
           currentStreak={contributionStatsQuery.data?.currentStreak ?? 0}
         />

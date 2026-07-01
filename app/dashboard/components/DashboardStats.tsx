@@ -3,11 +3,15 @@
 import { Bookmark, Flame, GitPullRequest } from "lucide-react";
 
 export function DashboardStats({
+  totalBookmarks,
   weeklyBookmarks,
+  totalContributions,
   totalPRs,
   currentStreak,
 }: {
+  totalBookmarks: number;
   weeklyBookmarks: number;
+  totalContributions: number;
   totalPRs: number;
   currentStreak: number;
 }) {
@@ -16,17 +20,20 @@ export function DashboardStats({
       {[
         {
           label: "Bookmarked",
-          value: weeklyBookmarks,
+          value: totalBookmarks,
+          detail: `${weeklyBookmarks} this week`,
           icon: Bookmark,
         },
         {
-          label: "PRs Merged",
-          value: totalPRs,
+          label: "GitHub Activity",
+          value: totalContributions,
+          detail: `${totalPRs} PRs`,
           icon: GitPullRequest,
         },
         {
           label: "Streak",
           value: currentStreak,
+          detail: "days",
           icon: Flame,
         },
       ].map((stat) => {
@@ -36,6 +43,7 @@ export function DashboardStats({
             <Icon className="mb-3 h-4 w-4 text-zinc-500" />
             <p className="text-lg font-bold text-zinc-100">{stat.value}</p>
             <p className="text-[11px] font-medium leading-4 text-zinc-500">{stat.label}</p>
+            <p className="mt-1 text-[10px] font-medium leading-3 text-zinc-600">{stat.detail}</p>
           </div>
         );
       })}

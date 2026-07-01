@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/app/app-shell";
-import { GitPullRequest } from "lucide-react";
+import { Activity, Flame, GitCommit, GitPullRequest, Star } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type Contribution = {
@@ -27,7 +27,11 @@ type ContributionsResponse = {
 };
 
 type Stats = {
+  source?: "github" | "local";
+  totalContributions?: number;
   totalPRs: number;
+  githubCommits?: number | null;
+  currentStreak?: number;
   reposCount: number;
   longestStreak: number;
   totalReach: number;
@@ -38,6 +42,7 @@ type HeatmapCell = {
   count: number;
   avgComplexity: number;
   snippet: string | null;
+  source?: "github" | "local";
 };
 
 type MeResponse = {
@@ -75,17 +80,29 @@ function addDays(date: Date, days: number) {
 
 function heatColor(cell: HeatmapCell | undefined) {
   if (!cell) return "bg-zinc-800";
-  if (cell.avgComplexity < 2) return "bg-emerald-900";
-  if (cell.avgComplexity < 3) return "bg-emerald-700";
-  if (cell.avgComplexity < 4) return "bg-emerald-500";
+  if (cell.count <= 1) return "bg-emerald-950";
+  if (cell.count <= 3) return "bg-emerald-800";
+  if (cell.count <= 6) return "bg-emerald-600";
   return "bg-emerald-400";
 }
 
-function StatCard({ value, label }: { value: string | number; label: string }) {
+function StatCard({
+  value,
+  label,
+  detail,
+  icon: Icon,
+}: {
+  value: string | number;
+  label: string;
+  detail?: string;
+  icon: typeof Activity;
+}) {
   return (
-    <div className="rounded-sm border border-zinc-800 bg-zinc-900 p-5">
+    <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-5">
+      <Icon className="mb-4 h-4 w-4 text-zinc-500" />
       <p className="text-3xl font-bold text-zinc-100">{value}</p>
       <p className="mt-2 text-xs font-medium text-zinc-500">{label}</p>
+      {detail && <p className="mt-1 text-[11px] font-medium text-zinc-600">{detail}</p>}
     </div>
   );
 }
@@ -109,7 +126,7 @@ export default function ContributionsPage() {
 
   const heatmapQuery = useQuery({
     queryKey: ["contributions-heatmap"],
-    queryFn: () => fetchJson<{ heatmap: HeatmapCell[] }>("/api/contributions/heatmap"),
+    queryFn: () => fetchJson<{ heatmap: HeatmapCell[]; source?: "github" | "local" }>("/api/contributions/heatmap"),
   });
 
   const meQuery = useQuery({
@@ -179,7 +196,23 @@ export default function ContributionsPage() {
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-5xl space-y-8 px-6 py-8">
+      <div className="mx-auto max-w-6xl space-y-8 px-6 py-8">
+        <section className="flex flex-col gap-3 border-b border-zinc-900 pb-6 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-emerald-500">
+              Contribution Activity
+            </p>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-zinc-100">
+              GitHub impact
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
+              Activity combines your GitHub contribution calendar with PRs captured by ContribIQ.
+            </p>
+          </div>
+          <span className="w-fit rounded-sm border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs font-bold text-zinc-400">
+            {statsQuery.data?.source === "github" ? "GitHub synced" : "Local fallback"}
+          </span>
+        </section>
         <section>
           {statsQuery.isLoading ? (
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -189,21 +222,66 @@ export default function ContributionsPage() {
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-              <StatCard value={statsQuery.data?.totalPRs ?? 0} label="PRs Merged" />
-              <StatCard value={statsQuery.data?.reposCount ?? 0} label="Repos Contributed" />
-              <StatCard value={`${statsQuery.data?.longestStreak ?? 0} days`} label="Longest Streak" />
-              <StatCard value={formatReach(statsQuery.data?.totalReach ?? 0)} label="Combined Reach ★" />
+              <StatCard
+                value={statsQuery.data?.totalContributions ?? statsQuery.data?.totalPRs ?? 0}
+                label="Total Activity"
+                detail={`${statsQuery.data?.githubCommits ?? 0} commits`}
+                icon={Activity}
+              />
+              <StatCard
+                value={statsQuery.data?.totalPRs ?? 0}
+                label="Pull Requests"
+                detail={`${statsQuery.data?.reposCount ?? 0} repos`}
+                icon={GitPullRequest}
+              />
+              <StatCard
+                value={`${statsQuery.data?.currentStreak ?? 0} days`}
+                label="Current Streak"
+                detail={`${statsQuery.data?.longestStreak ?? 0} longest`}
+                icon={Flame}
+              />
+              <StatCard
+                value={formatReach(statsQuery.data?.totalReach ?? 0)}
+                label="Combined Reach"
+                detail="curated repo stars"
+                icon={Star}
+              />
             </div>
           )}
         </section>
 
         <section className="space-y-4">
-          <h2 className="text-sm font-bold text-zinc-100">Contribution Activity</h2>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-zinc-100">Activity calendar</h2>
+              <p className="mt-1 text-xs font-medium text-zinc-500">
+                {heatmapQuery.data?.source === "github"
+                  ? "Synced from your GitHub contribution calendar."
+                  : "Showing locally tracked merged PR activity."}
+              </p>
+            </div>
+            <div className="hidden items-center gap-1 text-[10px] font-medium text-zinc-600 sm:flex">
+              <span>Less</span>
+              <span className="h-3 w-3 rounded-sm bg-zinc-800" />
+              <span className="h-3 w-3 rounded-sm bg-emerald-950" />
+              <span className="h-3 w-3 rounded-sm bg-emerald-800" />
+              <span className="h-3 w-3 rounded-sm bg-emerald-600" />
+              <span className="h-3 w-3 rounded-sm bg-emerald-400" />
+              <span>More</span>
+            </div>
+          </div>
           {heatmapQuery.isLoading ? (
             <div className="h-24 w-full animate-pulse rounded-sm bg-zinc-800" />
+          ) : heatmapQuery.data?.heatmap.length === 0 ? (
+            <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-8 text-center">
+              <GitCommit className="mx-auto h-8 w-8 text-zinc-700" />
+              <p className="mt-3 text-sm font-medium text-zinc-500">
+                No contribution activity found for the last year.
+              </p>
+            </div>
           ) : (
-            <div className="overflow-x-auto rounded-sm border border-zinc-800 bg-zinc-900 p-4">
-              <div className="flex gap-[3px]">
+            <div className="custom-scrollbar overflow-x-auto rounded-sm border border-zinc-800 bg-zinc-950 p-4">
+              <div className="flex min-w-max gap-[3px]">
                 {heatmapWeeks.map((week, weekIndex) => (
                   <div key={weekIndex} className="flex flex-col gap-[3px]">
                     {week.map(({ date, cell }) => (
@@ -212,8 +290,8 @@ export default function ContributionsPage() {
                         className={`h-3 w-3 rounded-sm ${heatColor(cell)}`}
                         title={
                           cell
-                            ? `${cell.count} PR(s) on ${date}\n${cell.snippet ?? ""}`
-                            : `0 PR(s) on ${date}`
+                            ? `${cell.count} contribution(s) on ${date}\n${cell.snippet ?? ""}`
+                            : `0 contribution(s) on ${date}`
                         }
                       />
                     ))}
@@ -234,7 +312,7 @@ export default function ContributionsPage() {
               ))}
             </div>
           ) : contributions.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-sm border border-zinc-800 bg-zinc-900 p-10 text-center">
+            <div className="flex flex-col items-center justify-center rounded-sm border border-zinc-800 bg-zinc-950 p-10 text-center">
               <GitPullRequest className="h-10 w-10 text-zinc-700" />
               <p className="mt-4 text-sm font-medium text-zinc-500">No merged PRs yet</p>
               <p className="mt-1 text-xs text-zinc-600">
@@ -259,7 +337,7 @@ export default function ContributionsPage() {
                 return (
                   <article
                     key={contribution.id}
-                    className="space-y-3 rounded-sm border border-zinc-800 bg-zinc-900 p-5"
+                    className="space-y-3 rounded-sm border border-zinc-800 bg-zinc-950 p-5 transition-colors hover:border-zinc-700"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <p className="text-sm font-bold text-zinc-100">
@@ -306,7 +384,7 @@ export default function ContributionsPage() {
                         rel="noreferrer"
                         className="text-xs font-bold text-emerald-400 hover:text-emerald-300"
                       >
-                        View PR →
+                        View PR
                       </a>
                     </div>
                   </article>
