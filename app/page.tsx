@@ -3,6 +3,20 @@ import { ArrowRight, Code2, GitMerge, GitPullRequest, Search, Star, Terminal, Cp
 
 import { createClient } from "@/utils/supabase/server"
 
+type GitHubSearchRepo = {
+  id: number;
+  full_name: string;
+  description: string | null;
+  stargazers_count: number;
+  open_issues_count: number;
+  language: string | null;
+  html_url: string;
+  owner: {
+    login: string;
+    avatar_url: string;
+  };
+};
+
 async function getTopRepos() {
   try {
     const res = await fetch(
@@ -10,9 +24,9 @@ async function getTopRepos() {
       { next: { revalidate: 3600 } } // Cache for an hour
     )
     if (!res.ok) return []
-    const data = await res.json()
+    const data = (await res.json()) as { items?: GitHubSearchRepo[] }
     return data.items || []
-  } catch (error) {
+  } catch {
     return []
   }
 }
@@ -61,6 +75,12 @@ export default async function Home() {
             <span className="text-lg font-bold tracking-tight">ContribIQ</span>
           </div>
           <div className="flex items-center gap-4">
+            <Link
+              href="/projects"
+              className="hidden rounded-sm px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-900 hover:text-white sm:flex"
+            >
+              Projects
+            </Link>
             {user ? (
               <Link
                 href="/dashboard"
@@ -106,13 +126,13 @@ export default async function Home() {
             >
               Start Contributing
             </Link>
-            <a
-              href="#explore"
+            <Link
+              href="/projects"
               className="flex h-12 w-full sm:w-auto items-center justify-center gap-2 rounded-sm border border-zinc-800 bg-transparent px-8 font-medium text-zinc-300 transition-colors hover:bg-zinc-900"
             >
               <Search className="h-4 w-4" />
               Explore Repositories
-            </a>
+            </Link>
           </div>
         </div>
       </section>
@@ -205,7 +225,7 @@ export default async function Home() {
             <h2 className="text-3xl font-bold tracking-tight">Active Ecosystems</h2>
             <p className="mt-2 text-zinc-400">Live data fetched from GitHub representing top open-source projects.</p>
           </div>
-          <div className="flex items-center gap-4 text-sm text-zinc-500 font-medium">
+          <div className="flex flex-wrap items-center gap-4 text-sm text-zinc-500 font-medium">
             <div className="flex items-center gap-2">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -213,12 +233,18 @@ export default async function Home() {
               </span>
               Live Sync
             </div>
+            <Link
+              href="/projects"
+              className="inline-flex items-center gap-1.5 rounded-sm border border-zinc-800 px-3 py-2 text-xs font-bold text-zinc-300 transition-colors hover:bg-zinc-900 hover:text-white"
+            >
+              Explore all repositories <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
           </div>
         </div>
 
         {repos.length > 0 ? (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {repos.map((repo: any) => (
+            {repos.map((repo) => (
               <div
                 key={repo.id}
                 className="group relative flex flex-col justify-between rounded-sm border border-zinc-800 bg-zinc-950 p-6 transition-all hover:border-zinc-600 hover:bg-zinc-900/50"

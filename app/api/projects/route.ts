@@ -1,60 +1,37 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
+const PAGE_SIZE = 9;
 
 const projectQuerySchema = z.object({
   q: z.string().trim().max(80).optional(),
   category: z.string().trim().max(40).optional(),
   language: z.string().trim().max(40).optional(),
   sort: z.enum(["activity", "stars", "issues", "health", "name"]).default("activity"),
+  page: z.coerce.number().int().min(1).default(1),
 });
-
-async function getDbUserId() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) return null;
-
-  const githubIdStr = user.user_metadata?.provider_id;
-  if (!githubIdStr) return null;
-
-  const dbUser = await prisma.user.findUnique({
-    where: { githubId: parseInt(githubIdStr, 10) },
-    select: { id: true },
-  });
-
-  return dbUser?.id ?? null;
-}
 
 function healthScore(repo: { maintainerScore: number; activityScore: number }) {
   return repo.maintainerScore * 0.55 + repo.activityScore * 0.45;
 }
 
 export async function GET(request: Request) {
-  const userId = await getDbUserId();
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const { searchParams } = new URL(request.url);
   const parsed = projectQuerySchema.safeParse({
     q: searchParams.get("q") || undefined,
     category: searchParams.get("category") || undefined,
     language: searchParams.get("language") || undefined,
     sort: searchParams.get("sort") || undefined,
+    page: searchParams.get("page") || undefined,
   });
 
   if (!parsed.success) {
     return NextResponse.json({ error: z.treeifyError(parsed.error) }, { status: 400 });
   }
 
-  const { q, category, language, sort } = parsed.data;
+  const { q, category, language, sort, page } = parsed.data;
   const where = {
     ...(q
       ? {
@@ -72,7 +49,6 @@ export async function GET(request: Request) {
 
   const repos = await prisma.repo.findMany({
     where,
-    take: 120,
     select: {
       id: true,
       owner: true,
@@ -135,10 +111,22 @@ export async function GET(request: Request) {
   const categories = Array.from(
     new Set(categoryRows.flatMap((repo) => repo.categories).filter(Boolean))
   ).sort((a, b) => a.localeCompare(b));
+  const total = projects.length;
+  const totalOpenIssues = projects.reduce((sum, repo) => sum + repo.openIssueCount, 0);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const paginatedProjects = projects.slice(start, start + PAGE_SIZE);
 
   return NextResponse.json({
-    total: projects.length,
-    repos: projects,
+    total,
+    page: currentPage,
+    pageSize: PAGE_SIZE,
+    totalPages,
+    totalOpenIssues,
+    hasNextPage: currentPage < totalPages,
+    hasPreviousPage: currentPage > 1,
+    repos: paginatedProjects,
     filters: {
       languages: languages
         .map((repo) => repo.language)

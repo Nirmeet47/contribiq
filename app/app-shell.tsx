@@ -8,7 +8,6 @@ import {
   BookOpen,
   Bookmark,
   Code2,
-  FolderGit2,
   Inbox,
   LayoutDashboard,
   LogOut,
@@ -18,7 +17,6 @@ import {
 
 const NAV_ITEMS = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-  { label: "Projects", icon: FolderGit2, href: "/projects" },
   { label: "Matches", icon: Inbox, href: "/matches" },
   { label: "Bookmarks", icon: Bookmark, href: "/bookmarks" },
   { label: "Skills", icon: BookOpen, href: "/skills" },
@@ -43,7 +41,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <main className="min-h-screen bg-zinc-950 text-zinc-50 font-sans selection:bg-emerald-500/30">
       <div className="flex min-h-screen">
         <aside className="hidden w-64 shrink-0 border-r border-zinc-900 bg-zinc-950 p-5 md:block">
-          <Link href="/dashboard" className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center bg-white">
               <Code2 className="h-5 w-5 text-zinc-950" strokeWidth={2.5} />
             </div>

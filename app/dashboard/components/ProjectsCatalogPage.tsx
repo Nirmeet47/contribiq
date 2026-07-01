@@ -1,7 +1,6 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { AppShell } from "@/app/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,7 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Activity, ExternalLink, GitFork, Search, Star } from "lucide-react";
+import { Activity, ArrowRight, Code2, ExternalLink, GitFork, Search, Star } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -37,6 +36,12 @@ type ProjectRepo = {
 
 type ProjectsResponse = {
   total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  totalOpenIssues: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
   repos: ProjectRepo[];
   filters: {
     languages: string[];
@@ -75,13 +80,15 @@ async function fetchProjects({
   category,
   language,
   sort,
+  page,
 }: {
   search: string;
   category: string;
   language: string;
   sort: ProjectSort;
+  page: number;
 }) {
-  const params = new URLSearchParams({ sort });
+  const params = new URLSearchParams({ sort, page: page.toString() });
   if (search.trim()) params.set("q", search.trim());
   if (category) params.set("category", category);
   if (language) params.set("language", language);
@@ -190,10 +197,11 @@ export function ProjectsCatalogPage() {
   const [category, setCategory] = useState("");
   const [language, setLanguage] = useState("");
   const [sort, setSort] = useState<ProjectSort>("activity");
+  const [page, setPage] = useState(1);
 
   const projectsQuery = useQuery({
-    queryKey: ["projects", { search, category, language, sort }],
-    queryFn: () => fetchProjects({ search, category, language, sort }),
+    queryKey: ["projects", { search, category, language, sort, page }],
+    queryFn: () => fetchProjects({ search, category, language, sort, page }),
   });
 
   const repos = projectsQuery.data?.repos ?? [];
@@ -201,7 +209,32 @@ export function ProjectsCatalogPage() {
   const categoryOptions = projectsQuery.data?.filters.categories.slice(0, 12) ?? [];
 
   return (
-    <AppShell>
+    <main className="min-h-screen bg-zinc-950 text-zinc-50 font-sans selection:bg-emerald-500/30">
+      <nav className="sticky top-0 z-50 border-b border-zinc-900 bg-zinc-950/85 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+          <Link href="/" className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center bg-white">
+              <Code2 className="h-5 w-5 text-zinc-950" strokeWidth={2.5} />
+            </div>
+            <span className="text-lg font-bold tracking-tight">ContribIQ</span>
+          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/projects"
+              className="rounded-sm bg-zinc-900 px-3 py-2 text-sm font-medium text-white"
+            >
+              Projects
+            </Link>
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-medium text-zinc-950 transition-colors hover:bg-zinc-200"
+            >
+              Dashboard <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+      </nav>
+
       <section className="mx-auto max-w-7xl space-y-6 px-6 py-8">
         <div className="flex flex-col gap-4 border-b border-zinc-900 pb-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -222,7 +255,7 @@ export function ProjectsCatalogPage() {
             </Card>
             <Card className="p-3">
               <p className="text-xl font-bold text-zinc-100">
-                {projectsQuery.data?.repos.reduce((sum, repo) => sum + repo.openIssueCount, 0) ?? 0}
+                {projectsQuery.data?.totalOpenIssues ?? 0}
               </p>
               <p className="text-[11px] font-medium text-zinc-500">Open issues</p>
             </Card>
@@ -235,7 +268,10 @@ export function ProjectsCatalogPage() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-600" />
               <input
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(1);
+                }}
                 placeholder="Search owner, repo, or description"
                 className="h-10 w-full rounded-sm border border-zinc-800 bg-zinc-900 pl-9 pr-3 text-sm font-medium text-zinc-200 outline-none transition-colors placeholder:text-zinc-600 hover:border-zinc-700 focus:border-emerald-500/60"
               />
@@ -243,7 +279,10 @@ export function ProjectsCatalogPage() {
 
             <select
               value={language}
-              onChange={(event) => setLanguage(event.target.value)}
+              onChange={(event) => {
+                setLanguage(event.target.value);
+                setPage(1);
+              }}
               className="h-10 rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-sm font-bold text-zinc-300 outline-none transition-colors hover:border-zinc-700"
               aria-label="Filter by language"
             >
@@ -257,7 +296,10 @@ export function ProjectsCatalogPage() {
 
             <select
               value={sort}
-              onChange={(event) => setSort(event.target.value as ProjectSort)}
+              onChange={(event) => {
+                setSort(event.target.value as ProjectSort);
+                setPage(1);
+              }}
               className="h-10 rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-sm font-bold text-zinc-300 outline-none transition-colors hover:border-zinc-700"
               aria-label="Sort projects"
             >
@@ -277,6 +319,7 @@ export function ProjectsCatalogPage() {
                   setCategory("");
                   setLanguage("");
                   setSort("activity");
+                  setPage(1);
                 }}
               >
                 Reset
@@ -287,7 +330,10 @@ export function ProjectsCatalogPage() {
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => setCategory("")}
+              onClick={() => {
+                setCategory("");
+                setPage(1);
+              }}
               className={`rounded-sm border px-3 py-1.5 text-xs font-bold transition-colors ${
                 !category
                   ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
@@ -300,7 +346,10 @@ export function ProjectsCatalogPage() {
               <button
                 key={item}
                 type="button"
-                onClick={() => setCategory(item)}
+                onClick={() => {
+                  setCategory(item);
+                  setPage(1);
+                }}
                 className={`rounded-sm border px-3 py-1.5 text-xs font-bold transition-colors ${
                   category === item
                     ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
@@ -337,7 +386,33 @@ export function ProjectsCatalogPage() {
             ))}
           </div>
         )}
+
+        {!projectsQuery.isLoading && !projectsQuery.isError && repos.length > 0 && (
+          <div className="flex flex-col gap-3 border-t border-zinc-900 pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-medium text-zinc-500">
+              Page {projectsQuery.data?.page ?? page} of {projectsQuery.data?.totalPages ?? 1}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!projectsQuery.data?.hasPreviousPage}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+              >
+                Previous
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!projectsQuery.data?.hasNextPage}
+                onClick={() => setPage((current) => current + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </section>
-    </AppShell>
+    </main>
   );
 }
