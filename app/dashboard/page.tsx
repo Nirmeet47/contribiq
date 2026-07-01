@@ -3,12 +3,10 @@
 import { useEffect, useState, useRef } from "react"
 import { createClient } from "@/utils/supabase/client"
 import type { User as SupabaseUser } from "@supabase/supabase-js"
-import { AppShell } from "@/app/app-shell"
-import { IssueFeed } from "./issue-feed"
-import { RightSidebar } from "./right-sidebar"
+import { DashboardHome } from "./components/DashboardHome"
 import { normalizeSkillName, skillIdentity } from "@/lib/skills"
 import {
-  LogOut, Code2, GitPullRequest, BookOpen,
+  Code2, GitPullRequest, BookOpen,
   CheckCircle2, Loader2, XCircle, GitMerge, Brain, Fingerprint,
   ArrowRight, GripVertical, Pencil, Plus, Save, X, FolderGit2,
   Server, Container, TestTube2, Wrench, Smartphone, Clock,
@@ -35,6 +33,16 @@ interface DbUser {
 
 type ViewState = "loading" | "onboarding" | "skills_review" | "interests" | "time_commitment" | "dashboard"
 
+async function readJson<T>(response: Response): Promise<T> {
+  const contentType = response.headers.get("content-type") ?? ""
+
+  if (!contentType.includes("application/json")) {
+    throw new Error(`Expected JSON from ${response.url || "request"}, got ${contentType || "unknown content type"}`)
+  }
+
+  return (await response.json()) as T
+}
+
 // -- Configs --
 const STEP_META: Record<string, { icon: React.ReactNode; label: string }> = {
   fetching: { icon: <GitMerge className="h-5 w-5" />, label: "Fetching GitHub Data" },
@@ -59,7 +67,7 @@ const INTEREST_OPTIONS = [
 
 const TIME_OPTIONS = [
   { label: "< 5 hrs / week", value: 4, detail: "Light weekly pace" },
-  { label: "5–10 hrs / week", value: 7, detail: "Steady contribution rhythm" },
+  { label: "5-10 hrs / week", value: 7, detail: "Steady contribution rhythm" },
   { label: "10+ hrs / week", value: 12, detail: "Deep focus capacity" },
 ]
 
@@ -116,7 +124,13 @@ export default function DashboardPage() {
   async function fetchSkills() {
     try {
       const r = await fetch("/api/me/skills")
-      const data = await r.json()
+      if (r.status === 401) {
+        window.location.href = "/login"
+        return
+      }
+      if (!r.ok) throw new Error(`Failed to fetch skills: ${r.status}`)
+
+      const data = await readJson<{ skills?: Skill[]; summary?: typeof summary }>(r)
       setSkills(data.skills ?? [])
       if (data.summary) {
         setSummary(data.summary)
@@ -138,16 +152,25 @@ export default function DashboardPage() {
 
       try {
         const res = await fetch("/api/me")
-        const data = await res.json()
+        if (res.status === 401) {
+          window.location.href = "/login"
+          return
+        }
+        if (!res.ok) throw new Error(`Failed to load DB user: ${res.status}`)
+
+        const data = await readJson<DbUser & { error?: unknown }>(res)
         if (data && !data.error) {
           setDbUser(data)
-          if (data.onboarded === false) {
+          const hasInterests = (data.interests?.length ?? 0) > 0
+          const hasTimeCommitment = (data.timeCommitment ?? 0) > 0
+
+          if (data.onboarded === false || !hasInterests || !hasTimeCommitment) {
             setSelectedInterests(data.interests ?? [])
-            setSelectedTimeCommitment(data.timeCommitment > 0 ? data.timeCommitment : null)
+            setSelectedTimeCommitment(data.timeCommitment && data.timeCommitment > 0 ? data.timeCommitment : null)
 
             if (data.profileAnalyzed) {
               await fetchSkills()
-              setViewState(data.interests?.length ? "time_commitment" : "skills_review")
+              setViewState(!hasInterests ? "interests" : !hasTimeCommitment ? "time_commitment" : "skills_review")
             } else {
               setViewState("onboarding")
             }
@@ -165,12 +188,15 @@ export default function DashboardPage() {
   }, [])
 
   // 2. Trigger SSE if in onboarding state
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (viewState !== "onboarding" || sseStarted.current) return
 
     if (dbUser?.onboarded) {
-      fetchSkills()
-      setViewState("dashboard")
+      void Promise.resolve().then(async () => {
+        await fetchSkills()
+        setViewState("dashboard")
+      })
       return
     }
 
@@ -221,6 +247,7 @@ export default function DashboardPage() {
       }
     }
   }, [viewState, sseRetryToken, dbUser?.onboarded])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const retryOnboardingAnalysis = () => {
     if (dbUser?.onboarded) {
@@ -503,7 +530,7 @@ export default function DashboardPage() {
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
         <div className="relative z-10 mx-auto max-w-4xl px-6 py-16 space-y-10">
           <div className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight">Step 3 of 4 — What do you want to work on?</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Step 3 of 4 - What do you want to work on?</h1>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -549,7 +576,7 @@ export default function DashboardPage() {
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
         <div className="relative z-10 mx-auto max-w-3xl px-6 py-16 space-y-10">
           <div className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight">Step 4 of 4 — How much time can you commit?</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Step 4 of 4 - How much time can you commit?</h1>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
@@ -594,33 +621,5 @@ export default function DashboardPage() {
 
   const name = dbUser?.name || user?.user_metadata?.full_name || "Developer"
 
-  return (
-    <AppShell>
-        <section className="p-6 sm:p-8">
-          <div className="mb-8 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-zinc-500">Welcome back</p>
-              <h1 className="text-2xl font-bold tracking-tight">{name}</h1>
-            </div>
-            <button onClick={handleLogout} className="flex items-center gap-2 rounded-sm border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800 md:hidden">
-              <LogOut className="h-4 w-4" /> Sign Out
-            </button>
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <IssueFeed />
-            </div>
-            <RightSidebar />
-          </div>
-        </section>
-
-      <style jsx global>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #27272a; border-radius: 2px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
-      `}</style>
-    </AppShell>
-  )
+  return <DashboardHome name={name} onLogout={handleLogout} />
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { invalidateUserFeedCaches } from "@/lib/feed-cache";
 import { prisma } from "@/lib/prisma";
-import { redis } from "@/lib/redis";
 import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -57,10 +57,7 @@ export async function POST(request: Request) {
     },
   });
 
-  const cacheKeys = await redis.keys(`feed:${userId}:*`);
-  if (cacheKeys.length > 0) {
-    await redis.del(...cacheKeys);
-  }
+  await invalidateUserFeedCaches(userId, "issue-feedback-created");
 
   return NextResponse.json({ feedback });
 }

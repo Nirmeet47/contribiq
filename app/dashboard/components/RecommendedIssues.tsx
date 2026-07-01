@@ -9,7 +9,7 @@ import {
   ThumbsDown,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 type Difficulty = "beginner" | "intermediate" | "advanced";
 type IssueType = "bug" | "feature" | "docs" | "refactor";
@@ -41,6 +41,7 @@ type FeedMatch = {
 
 type FeedResponse = {
   matches: FeedMatch[];
+  reason?: "profile_incomplete";
 };
 
 const DIFFICULTIES: Difficulty[] = ["beginner", "intermediate", "advanced"];
@@ -65,23 +66,31 @@ function maintainerLabel(score: number) {
 function responsivenessTone(score: number) {
   if (score >= 0.7) {
     return {
-      label: "⚡ Fast · ~1-2 days",
+      label: "Fast response (~1-2 days)",
       className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
     };
   }
   if (score >= 0.4) {
     return {
-      label: "🕐 Moderate · ~1 week",
+      label: "Moderate response (~1 week)",
       className: "border-amber-500/30 bg-amber-500/10 text-amber-300",
     };
   }
   return {
-    label: "🐢 Slow · 2+ weeks",
+    label: "Slow response (2+ weeks)",
     className: "border-zinc-700 bg-zinc-900 text-zinc-300",
   };
 }
 
-function SkeletonCard() {
+function GitHubMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="currentColor">
+      <path d="M12 2C6.48 2 2 6.58 2 12.24c0 4.52 2.87 8.35 6.84 9.71.5.1.68-.22.68-.49 0-.24-.01-1.04-.01-1.89-2.78.62-3.37-1.22-3.37-1.22-.45-1.19-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.35 1.12 2.92.85.09-.66.35-1.12.63-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05A9.35 9.35 0 0 1 12 6.95c.85 0 1.7.12 2.5.34 1.9-1.33 2.74-1.05 2.74-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.8 0 .27.18.59.69.49A10.07 10.07 0 0 0 22 12.24C22 6.58 17.52 2 12 2Z" />
+    </svg>
+  );
+}
+
+function RecommendedIssueSkeleton() {
   return (
     <div className="animate-pulse rounded-sm border border-zinc-800 bg-zinc-950 p-5">
       <div className="mb-4 flex items-start justify-between gap-4">
@@ -138,7 +147,7 @@ async function fetchFeed({
   return (await response.json()) as FeedResponse;
 }
 
-function IssueCard({
+function RecommendedIssueCard({
   match,
   onDismiss,
   onRestore,
@@ -270,6 +279,16 @@ function IssueCard({
           </Link>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <a
+            href={match.issue.githubUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-sm border border-zinc-800 bg-zinc-900 p-2 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-white"
+            aria-label="Open issue on GitHub"
+            title="Open on GitHub"
+          >
+            <GitHubMark className="h-4 w-4" />
+          </a>
           <button
             type="button"
             onClick={() => bookmarkMutation.mutate(!bookmarked)}
@@ -296,7 +315,7 @@ function IssueCard({
   );
 }
 
-export function IssueFeed() {
+export function RecommendedIssues() {
   const [difficulty, setDifficulty] = useState<Difficulty | undefined>();
   const [issueType, setIssueType] = useState<IssueType | undefined>();
   const [sort, setSort] = useState<SortOrder>("desc");
@@ -306,6 +325,8 @@ export function IssueFeed() {
     queryKey: ["feed", { difficulty, issueType, sort }],
     queryFn: () => fetchFeed({ difficulty, issueType, sort }),
   });
+  const visibleMatches =
+    feedQuery.data?.matches.filter((match) => !dismissedIssueIds.has(match.issue.id)) ?? [];
 
   return (
     <div className="space-y-5">
@@ -364,9 +385,9 @@ export function IssueFeed() {
       </div>
 
       {feedQuery.isLoading && (
-        <div className="space-y-4">
+        <div className="custom-scrollbar h-[calc(100vh-245px)] min-h-[520px] space-y-4 overflow-y-auto pr-2">
           {[1, 2, 3].map((item) => (
-            <SkeletonCard key={item} />
+            <RecommendedIssueSkeleton key={item} />
           ))}
         </div>
       )}
@@ -379,15 +400,25 @@ export function IssueFeed() {
 
       {feedQuery.data?.matches.length === 0 && (
         <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-8 text-center text-sm font-medium text-zinc-500">
-          No matches yet. Run the match scoring worker after issues are classified.
+          {feedQuery.data.reason === "profile_incomplete"
+            ? "Complete your skills, interests, and time commitment so matches can be personalized."
+            : "No strong matches yet. Update your skills or wait for more issues to be classified and rescored."}
         </div>
       )}
 
-      <div className="space-y-4">
-        {feedQuery.data?.matches
-          .filter((match) => !dismissedIssueIds.has(match.issue.id))
-          .map((match) => (
-            <IssueCard
+      {feedQuery.data && feedQuery.data.matches.length > 0 && visibleMatches.length === 0 && (
+        <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-8 text-center text-sm font-medium text-zinc-500">
+          No visible recommendations left in this view.
+        </div>
+      )}
+
+      {visibleMatches.length > 0 && (
+        <div
+          className="custom-scrollbar h-[calc(100vh-245px)] min-h-[520px] space-y-4 overflow-y-auto pr-2"
+          aria-label="Recommended issues"
+        >
+          {visibleMatches.map((match) => (
+            <RecommendedIssueCard
               key={match.id}
               match={match}
               onDismiss={(issueId) =>
@@ -402,7 +433,8 @@ export function IssueFeed() {
               }
             />
           ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

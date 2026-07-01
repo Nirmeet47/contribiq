@@ -108,7 +108,7 @@ export async function GET() {
     where: { userId },
     select: {
       skills: {
-        select: { name: true },
+        select: { name: true, level: true, confidence: true },
       },
     },
   });
@@ -131,6 +131,13 @@ export async function GET() {
     }
   }
 
+  const skillWeights = new Map(
+    (skillProfile?.skills ?? []).map((skill) => {
+      const levelBoost = skill.level === "strong" ? 1 : skill.level === "moderate" ? 0.75 : 0.45;
+      return [skillIdentity(skill.name), Math.max(skill.confidence, levelBoost)];
+    })
+  );
+
   const repos = await prisma.repo.findMany({
     select: {
       id: true,
@@ -146,20 +153,64 @@ export async function GET() {
     orderBy: [{ activityScore: "desc" }, { stars: "desc" }],
   });
 
-  const matchingRepos = repos
-    .filter((repo) => {
+  const rankedRepos = repos
+    .map((repo) => {
       // Direct language match (e.g. repo.language = "TypeScript", user has TypeScript skill)
-      const languageMatches =
-        repo.language !== null && normalizedSkills.has(skillIdentity(repo.language));
+      const languageIdentity = repo.language ? skillIdentity(repo.language) : "";
+      const languageWeight = languageIdentity ? skillWeights.get(languageIdentity) ?? 0 : 0;
 
-      // Category match via skill→category mapping (e.g. user has React → frontend category)
-      const categoryMatches = repo.categories.some((category) =>
-        matchingCategories.has(category.toLowerCase())
-      );
+      // Category match via skill-to-category mapping (e.g. user has React -> frontend category)
+      const categoryWeight = repo.categories.reduce((best, category) => {
+        if (!matchingCategories.has(category.toLowerCase())) return best;
 
-      return languageMatches || categoryMatches;
+        const matchingSkillWeight = [...skillWeights.entries()].reduce((skillBest, [skill, weight]) => {
+          const categories = SKILL_TO_CATEGORIES[skill] ?? [];
+          return categories.includes(category.toLowerCase()) ? Math.max(skillBest, weight) : skillBest;
+        }, 0);
+
+        return Math.max(best, matchingSkillWeight || 0.35);
+      }, 0);
+
+      const personalizationScore = Math.max(languageWeight, categoryWeight);
+
+      return {
+        ...repo,
+        personalizationScore,
+        rankingScore:
+          personalizationScore * 10 +
+          repo.activityScore * 2 +
+          Math.log10(Math.max(repo.stars, 1)),
+      };
     })
-    .slice(0, 3);
+    .sort((a, b) =>
+      b.rankingScore === a.rankingScore
+        ? b.stars - a.stars
+        : b.rankingScore - a.rankingScore
+    );
 
-  return NextResponse.json({ repos: matchingRepos });
+  const matchingRepos = rankedRepos.filter((repo) => repo.personalizationScore > 0);
+  const selectedRepos = [...matchingRepos];
+  const selectedIds = new Set(selectedRepos.map((repo) => repo.id));
+
+  for (const repo of rankedRepos) {
+    if (selectedRepos.length >= 12) break;
+    if (selectedIds.has(repo.id)) continue;
+
+    selectedRepos.push(repo);
+    selectedIds.add(repo.id);
+  }
+
+  const responseRepos = selectedRepos.slice(0, 12).map((repo) => ({
+      id: repo.id,
+      owner: repo.owner,
+      name: repo.name,
+      fullName: repo.fullName,
+      description: repo.description,
+      language: repo.language,
+      stars: repo.stars,
+      categories: repo.categories,
+      activityScore: repo.activityScore,
+    }));
+
+  return NextResponse.json({ repos: responseRepos });
 }
