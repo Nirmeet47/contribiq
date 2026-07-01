@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { createClient } from "@/utils/supabase/client";
 import {
   BookOpen,
+  Bookmark,
   Code2,
   Inbox,
   LayoutDashboard,
@@ -17,6 +18,7 @@ import {
 const NAV_ITEMS = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
   { label: "Matches", icon: Inbox, href: "/matches" },
+  { label: "Bookmarks", icon: Bookmark, href: "/bookmarks" },
   { label: "Skills", icon: BookOpen, href: "/skills" },
   { label: "Contributions", icon: Trophy, href: "/contributions" },
   { label: "Settings", icon: Settings, href: "/settings" },

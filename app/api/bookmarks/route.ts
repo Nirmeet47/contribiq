@@ -43,7 +43,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const [totalBookmarks, weeklyBookmarks] = await Promise.all([
+  const [totalBookmarks, weeklyBookmarks, bookmarks] = await Promise.all([
     prisma.bookmark.count({
       where: { userId },
     }),
@@ -53,12 +53,59 @@ export async function GET() {
         createdAt: { gte: startOfCurrentUtcWeek() },
       },
     }),
+    prisma.bookmark.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        createdAt: true,
+        issue: {
+          select: {
+            id: true,
+            title: true,
+            aiSummary: true,
+            difficulty: true,
+            estimatedHours: true,
+            issueType: true,
+            githubUrl: true,
+            requiredSkills: true,
+            state: true,
+            repo: {
+              select: {
+                id: true,
+                owner: true,
+                name: true,
+                fullName: true,
+                language: true,
+                maintainerScore: true,
+              },
+            },
+          },
+        },
+      },
+    }),
   ]);
 
   return NextResponse.json({
     count: totalBookmarks,
     totalBookmarks,
     weeklyBookmarks,
+    bookmarks: bookmarks.map((bookmark) => ({
+      id: bookmark.id,
+      createdAt: bookmark.createdAt,
+      issue: {
+        id: bookmark.issue.id,
+        title: bookmark.issue.title,
+        aiSummary: bookmark.issue.aiSummary,
+        difficulty: bookmark.issue.difficulty,
+        estimatedHours: bookmark.issue.estimatedHours,
+        issueType: bookmark.issue.issueType,
+        githubUrl: bookmark.issue.githubUrl,
+        requiredSkills: bookmark.issue.requiredSkills,
+        state: bookmark.issue.state,
+        repo: bookmark.issue.repo,
+      },
+    })),
   });
 }
 
