@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AppShell } from "@/app/app-shell";
+import { DashboardPageLayout } from "@/components/dashboard/DashboardPageLayout";
 import {
   AlertCircle,
   Brain,
@@ -196,7 +196,7 @@ export default function SettingsPage() {
     : 0;
 
   return (
-    <AppShell>
+    <DashboardPageLayout>
       <section className="mx-auto max-w-6xl space-y-6 px-6 py-8 sm:px-8">
         <header className="flex flex-col gap-4 border-b border-zinc-900 pb-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -405,6 +405,6 @@ export default function SettingsPage() {
           )}
         </section>
       </section>
-    </AppShell>
+    </DashboardPageLayout>
   );
 }

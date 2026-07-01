@@ -1,8 +1,8 @@
 "use client";
 
-import { AppShell } from "@/app/app-shell";
 import { LogOut } from "lucide-react";
-import { DashboardSidebar } from "./DashboardSidebar";
+import { DashboardPageLayout } from "./DashboardPageLayout";
+import { DashboardRightPanel } from "./DashboardRightPanel";
 import { RecommendedIssues } from "./RecommendedIssues";
 import { WorkingIssues } from "./WorkingIssues";
 
@@ -14,7 +14,7 @@ export function DashboardHome({
   onLogout: () => void;
 }) {
   return (
-    <AppShell>
+    <DashboardPageLayout>
       <section className="p-6 sm:p-8">
         <div className="mb-8 flex items-center justify-between">
           <div>
@@ -31,10 +31,9 @@ export function DashboardHome({
             <WorkingIssues />
             <RecommendedIssues />
           </div>
-          <DashboardSidebar />
+          <DashboardRightPanel />
         </div>
       </section>
-
-    </AppShell>
+    </DashboardPageLayout>
   );
 }

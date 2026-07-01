@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react"
 import { createClient } from "@/utils/supabase/client"
 import type { User as SupabaseUser } from "@supabase/supabase-js"
-import { DashboardHome } from "./components/DashboardHome"
+import { DashboardHome } from "@/components/dashboard/DashboardHome"
 import { normalizeSkillName, skillIdentity } from "@/lib/skills"
 import {
   Code2, GitPullRequest, BookOpen,

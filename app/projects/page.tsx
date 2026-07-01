@@ -1,4 +1,4 @@
-import { ProjectsCatalogPage } from "@/app/dashboard/components/ProjectsCatalogPage";
+import { ProjectsCatalogPage } from "@/components/dashboard/ProjectsCatalogPage";
 
 export default function ProjectsPage() {
   return <ProjectsCatalogPage />;

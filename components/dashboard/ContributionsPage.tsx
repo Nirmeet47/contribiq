@@ -1,9 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { AppShell } from "@/app/app-shell";
 import { Activity, Flame, GitCommit, GitPullRequest, Star } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { DashboardPageLayout } from "./DashboardPageLayout";
 
 type Contribution = {
   id: string;
@@ -195,7 +195,7 @@ export function ContributionsPage() {
   }
 
   return (
-    <AppShell>
+    <DashboardPageLayout>
       <div className="mx-auto max-w-6xl space-y-8 px-6 py-8">
         <section className="flex flex-col gap-3 border-b border-zinc-900 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -413,6 +413,6 @@ export function ContributionsPage() {
           </button>
         </section>
       </div>
-    </AppShell>
+    </DashboardPageLayout>
   );
 }

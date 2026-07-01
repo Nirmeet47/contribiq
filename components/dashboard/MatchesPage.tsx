@@ -1,12 +1,12 @@
 "use client";
 
-import { AppShell } from "@/app/app-shell";
 import { Badge } from "@/components/ui/badge";
+import { DashboardPageLayout } from "./DashboardPageLayout";
 import { RecommendedIssues } from "./RecommendedIssues";
 
 export function MatchesPage() {
   return (
-    <AppShell>
+    <DashboardPageLayout>
       <section className="mx-auto max-w-6xl space-y-6 px-6 py-8">
         <div className="flex flex-col gap-4 border-b border-zinc-900 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -25,6 +25,6 @@ export function MatchesPage() {
 
         <RecommendedIssues />
       </section>
-    </AppShell>
+    </DashboardPageLayout>
   );
 }
