@@ -73,7 +73,7 @@ async function fetchContributionStats() {
 }
 
 async function fetchTrendingRepos() {
-  const response = await fetch("/api/repos/trending");
+  const response = await fetch("/api/repos/trending", { cache: "no-store" });
   if (!response.ok) throw new Error("Failed to load trending repos");
   return (await response.json()) as TrendingReposResponse;
 }
@@ -96,6 +96,16 @@ function formatStars(value: number) {
 
 export function RightSidebar() {
   const meQuery = useQuery({ queryKey: ["me"], queryFn: fetchMe });
+  const topSkills = (meQuery.data?.skillProfile?.skills ?? [])
+    .toSorted((a, b) => b.confidence - a.confidence)
+    .slice(0, 6)
+    .map((skill) => ({
+      skill: skill.name,
+      level: skill.level,
+      confidence: Math.round(skill.confidence * 100),
+    }));
+  const skillQueryKey = topSkills.map((skill) => `${skill.skill}:${skill.level}`);
+
   const bookmarksQuery = useQuery({
     queryKey: ["bookmarks"],
     queryFn: fetchBookmarks,
@@ -105,18 +115,10 @@ export function RightSidebar() {
     queryFn: fetchContributionStats,
   });
   const trendingReposQuery = useQuery({
-    queryKey: ["trending-repos"],
+    queryKey: ["trending-repos", skillQueryKey],
     queryFn: fetchTrendingRepos,
+    enabled: meQuery.isSuccess,
   });
-
-  const topSkills = (meQuery.data?.skillProfile?.skills ?? [])
-    .toSorted((a, b) => b.confidence - a.confidence)
-    .slice(0, 6)
-    .map((skill) => ({
-      skill: skill.name,
-      level: skill.level,
-      confidence: Math.round(skill.confidence * 100),
-    }));
 
   const chartData =
     topSkills.length > 0
@@ -198,7 +200,10 @@ export function RightSidebar() {
 
         <section className="space-y-3">
           <h2 className="text-sm font-bold text-zinc-100">Trending in your stack</h2>
-          <div className="space-y-2">
+          <div
+            className="custom-scrollbar scroll-fade h-[336px] space-y-2 overflow-y-scroll rounded-sm border border-zinc-900 bg-zinc-950/60 p-2 pr-1"
+            aria-label="Trending repositories in your stack"
+          >
             {trendingReposQuery.isLoading ? (
               [1, 2, 3].map((item) => (
                 <div
@@ -225,7 +230,7 @@ export function RightSidebar() {
                   href={`https://github.com/${repo.fullName}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="block rounded-sm border border-zinc-800 bg-zinc-950 p-3 transition-colors hover:border-zinc-700"
+                  className="block h-[74px] rounded-sm border border-zinc-800 bg-zinc-950 p-3 transition-colors hover:border-zinc-700 hover:bg-zinc-900/60"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">

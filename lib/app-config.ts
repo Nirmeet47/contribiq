@@ -16,7 +16,7 @@ function floatFromEnv(name: string, fallback: number) {
 
 export const appConfig = {
   // Feed/API pagination and cache behavior.
-  feedPageSize: intFromEnv("FEED_PAGE_SIZE", 30),
+  feedPageSize: intFromEnv("FEED_PAGE_SIZE", 12),
   feedMinScore: Math.min(floatFromEnv("FEED_MIN_SCORE", 0.5), 1),
   feedSkillOnlyMinScore: Math.min(floatFromEnv("FEED_SKILL_ONLY_MIN_SCORE", 0.65), 1),
   similarIssuesLimit: intFromEnv("SIMILAR_ISSUES_LIMIT", 5),

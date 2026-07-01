@@ -645,10 +645,28 @@ export default function DashboardPage() {
         </section>
 
       <style jsx global>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #27272a; border-radius: 2px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+        .custom-scrollbar {
+          scrollbar-width: thin;
+          scrollbar-color: #3f3f46 transparent;
+          scrollbar-gutter: stable;
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+          border-radius: 2px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #27272a;
+          border: 2px solid transparent;
+          border-radius: 999px;
+          background-clip: padding-box;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #52525b; }
+        .scroll-fade {
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.03),
+            inset 0 -18px 24px -24px rgba(0, 0, 0, 0.95);
+        }
       `}</style>
     </AppShell>
   )

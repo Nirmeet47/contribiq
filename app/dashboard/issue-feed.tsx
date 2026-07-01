@@ -307,6 +307,8 @@ export function IssueFeed() {
     queryKey: ["feed", { difficulty, issueType, sort }],
     queryFn: () => fetchFeed({ difficulty, issueType, sort }),
   });
+  const visibleMatches =
+    feedQuery.data?.matches.filter((match) => !dismissedIssueIds.has(match.issue.id)) ?? [];
 
   return (
     <div className="space-y-5">
@@ -365,7 +367,7 @@ export function IssueFeed() {
       </div>
 
       {feedQuery.isLoading && (
-        <div className="space-y-4">
+        <div className="custom-scrollbar h-[calc(100vh-245px)] min-h-[520px] space-y-4 overflow-y-auto pr-2">
           {[1, 2, 3].map((item) => (
             <SkeletonCard key={item} />
           ))}
@@ -386,10 +388,18 @@ export function IssueFeed() {
         </div>
       )}
 
-      <div className="space-y-4">
-        {feedQuery.data?.matches
-          .filter((match) => !dismissedIssueIds.has(match.issue.id))
-          .map((match) => (
+      {feedQuery.data && feedQuery.data.matches.length > 0 && visibleMatches.length === 0 && (
+        <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-8 text-center text-sm font-medium text-zinc-500">
+          No visible recommendations left in this view.
+        </div>
+      )}
+
+      {visibleMatches.length > 0 && (
+        <div
+          className="custom-scrollbar h-[calc(100vh-245px)] min-h-[520px] space-y-4 overflow-y-auto pr-2"
+          aria-label="Recommended issues"
+        >
+          {visibleMatches.map((match) => (
             <IssueCard
               key={match.id}
               match={match}
@@ -405,7 +415,8 @@ export function IssueFeed() {
               }
             />
           ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
