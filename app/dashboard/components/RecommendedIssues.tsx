@@ -82,7 +82,7 @@ function responsivenessTone(score: number) {
   };
 }
 
-function SkeletonCard() {
+function RecommendedIssueSkeleton() {
   return (
     <div className="animate-pulse rounded-sm border border-zinc-800 bg-zinc-950 p-5">
       <div className="mb-4 flex items-start justify-between gap-4">
@@ -139,7 +139,7 @@ async function fetchFeed({
   return (await response.json()) as FeedResponse;
 }
 
-function IssueCard({
+function RecommendedIssueCard({
   match,
   onDismiss,
   onRestore,
@@ -297,7 +297,7 @@ function IssueCard({
   );
 }
 
-export function IssueFeed() {
+export function RecommendedIssues() {
   const [difficulty, setDifficulty] = useState<Difficulty | undefined>();
   const [issueType, setIssueType] = useState<IssueType | undefined>();
   const [sort, setSort] = useState<SortOrder>("desc");
@@ -369,7 +369,7 @@ export function IssueFeed() {
       {feedQuery.isLoading && (
         <div className="custom-scrollbar h-[calc(100vh-245px)] min-h-[520px] space-y-4 overflow-y-auto pr-2">
           {[1, 2, 3].map((item) => (
-            <SkeletonCard key={item} />
+            <RecommendedIssueSkeleton key={item} />
           ))}
         </div>
       )}
@@ -400,7 +400,7 @@ export function IssueFeed() {
           aria-label="Recommended issues"
         >
           {visibleMatches.map((match) => (
-            <IssueCard
+            <RecommendedIssueCard
               key={match.id}
               match={match}
               onDismiss={(issueId) =>
