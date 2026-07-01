@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { invalidateUserFeedCaches } from "@/lib/feed-cache";
 import { prisma } from "@/lib/prisma";
-import { redis } from "@/lib/redis";
 import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -87,10 +87,7 @@ export async function POST(request: Request) {
     },
   });
 
-  const cacheKeys = await redis.keys(`feed:${userId}:*`);
-  if (cacheKeys.length > 0) {
-    await redis.del(...cacheKeys);
-  }
+  await invalidateUserFeedCaches(userId, "bookmark-created");
 
   return NextResponse.json({ bookmark });
 }
@@ -113,10 +110,7 @@ export async function DELETE(request: Request) {
     },
   });
 
-  const cacheKeys = await redis.keys(`feed:${userId}:*`);
-  if (cacheKeys.length > 0) {
-    await redis.del(...cacheKeys);
-  }
+  await invalidateUserFeedCaches(userId, "bookmark-deleted");
 
   return NextResponse.json({ success: true });
 }

@@ -66,18 +66,18 @@ function maintainerLabel(score: number) {
 function responsivenessTone(score: number) {
   if (score >= 0.7) {
     return {
-      label: "⚡ Fast · ~1-2 days",
+      label: "Fast response (~1-2 days)",
       className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
     };
   }
   if (score >= 0.4) {
     return {
-      label: "🕐 Moderate · ~1 week",
+      label: "Moderate response (~1 week)",
       className: "border-amber-500/30 bg-amber-500/10 text-amber-300",
     };
   }
   return {
-    label: "🐢 Slow · 2+ weeks",
+    label: "Slow response (2+ weeks)",
     className: "border-zinc-700 bg-zinc-900 text-zinc-300",
   };
 }

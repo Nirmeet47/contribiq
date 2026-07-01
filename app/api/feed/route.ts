@@ -4,7 +4,6 @@ import { appConfig } from "@/lib/app-config";
 import { invalidateAllFeedCaches } from "@/lib/feed-cache";
 import { getAppGitHubToken } from "@/lib/github-token";
 import { prisma } from "@/lib/prisma";
-import { redis } from "@/lib/redis";
 import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +37,42 @@ type GitHubIssueResponse = {
   comments?: number;
   html_url?: string;
 };
+
+async function getCachedPayload(cacheKey: string) {
+  try {
+    const { redis } = await import("@/lib/redis");
+    const cached = await redis.get(cacheKey);
+    if (!cached) return null;
+
+    return JSON.parse(cached) as unknown;
+  } catch (error) {
+    console.error("[feed] Failed to read feed cache", { cacheKey, error });
+    return null;
+  }
+}
+
+async function setCachedPayload(cacheKey: string, payload: unknown) {
+  try {
+    const { redis } = await import("@/lib/redis");
+    await redis.set(cacheKey, JSON.stringify(payload), "EX", 300);
+  } catch (error) {
+    console.error("[feed] Failed to write feed cache", { cacheKey, error });
+  }
+}
+
+async function deleteIssueCaches(issueId: string, repoId: string) {
+  try {
+    const { redis } = await import("@/lib/redis");
+    await redis.del(`issue:${issueId}`);
+    await redis.del(`project:${repoId}`);
+  } catch (error) {
+    console.error("[feed] Failed to invalidate validated issue caches", {
+      issueId,
+      repoId,
+      error,
+    });
+  }
+}
 
 async function getDbUser() {
   const supabase = await createClient();
@@ -131,16 +166,7 @@ async function validateStaleIssues<T extends FeedMatch>(matches: T[]) {
       },
     });
 
-    try {
-      await redis.del(`issue:${match.issue.id}`);
-      await redis.del(`project:${match.issue.repo.id}`);
-    } catch (error) {
-      console.error("[feed] Failed to invalidate validated issue caches", {
-        issueId: match.issue.id,
-        repoId: match.issue.repo.id,
-        error,
-      });
-    }
+    await deleteIssueCaches(match.issue.id, match.issue.repo.id);
 
     if (latestState === "closed") {
       closedIssueIds.add(match.issue.id);
@@ -181,10 +207,10 @@ export async function GET(request: Request) {
 
   const { difficulty, issueType, sort } = parsed.data;
   const cacheKey = `feed:v3:${dbUser.id}:${difficulty ?? "all"}:${issueType ?? "all"}:${sort}:${appConfig.feedMinScore}:${appConfig.feedSkillOnlyMinScore}`;
-  const cached = await redis.get(cacheKey);
+  const cached = await getCachedPayload(cacheKey);
 
   if (cached) {
-    return NextResponse.json(JSON.parse(cached));
+    return NextResponse.json(cached);
   }
 
   const matches = await prisma.issueMatch.findMany({
@@ -278,7 +304,7 @@ export async function GET(request: Request) {
     })),
   };
 
-  await redis.set(cacheKey, JSON.stringify(payload), "EX", 300);
+  await setCachedPayload(cacheKey, payload);
 
   return NextResponse.json(payload);
 }

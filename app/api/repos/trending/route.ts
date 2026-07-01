@@ -152,7 +152,7 @@ export async function GET() {
       const languageMatches =
         repo.language !== null && normalizedSkills.has(skillIdentity(repo.language));
 
-      // Category match via skill→category mapping (e.g. user has React → frontend category)
+      // Category match via skill-to-category mapping (e.g. user has React -> frontend category)
       const categoryMatches = repo.categories.some((category) =>
         matchingCategories.has(category.toLowerCase())
       );

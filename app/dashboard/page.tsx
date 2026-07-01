@@ -69,7 +69,7 @@ const INTEREST_OPTIONS = [
 
 const TIME_OPTIONS = [
   { label: "< 5 hrs / week", value: 4, detail: "Light weekly pace" },
-  { label: "5–10 hrs / week", value: 7, detail: "Steady contribution rhythm" },
+  { label: "5-10 hrs / week", value: 7, detail: "Steady contribution rhythm" },
   { label: "10+ hrs / week", value: 12, detail: "Deep focus capacity" },
 ]
 
@@ -532,7 +532,7 @@ export default function DashboardPage() {
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
         <div className="relative z-10 mx-auto max-w-4xl px-6 py-16 space-y-10">
           <div className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight">Step 3 of 4 — What do you want to work on?</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Step 3 of 4 - What do you want to work on?</h1>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -578,7 +578,7 @@ export default function DashboardPage() {
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
         <div className="relative z-10 mx-auto max-w-3xl px-6 py-16 space-y-10">
           <div className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight">Step 4 of 4 — How much time can you commit?</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Step 4 of 4 - How much time can you commit?</h1>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
