@@ -12,7 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Bookmark, Clock, ExternalLink, GitPullRequest, Trash2 } from "lucide-react";
+import { Bookmark, CheckCircle2, Clock, ExternalLink, GitPullRequest, Trash2 } from "lucide-react";
 import Link from "next/link";
 
 type BookmarkIssue = {
@@ -25,6 +25,7 @@ type BookmarkIssue = {
   githubUrl: string;
   requiredSkills: string[];
   state: "open" | "closed";
+  isWorking: boolean;
   repo: {
     id: string;
     owner: string;
@@ -83,6 +84,20 @@ export function BookmarksPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bookmarks"] });
+      queryClient.invalidateQueries({ queryKey: ["feed"] });
+    },
+  });
+
+  const workingMutation = useMutation({
+    mutationFn: async (issueId: string) => {
+      const response = await fetch(`/api/issues/${issueId}/working`, {
+        method: "POST",
+      });
+      if (!response.ok) throw new Error("Failed to update active work");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["bookmarks"] });
+      queryClient.invalidateQueries({ queryKey: ["working"] });
       queryClient.invalidateQueries({ queryKey: ["feed"] });
     },
   });
@@ -164,6 +179,12 @@ export function BookmarksPage() {
                     <Badge variant={bookmark.issue.state === "open" ? "success" : "secondary"}>
                       {bookmark.issue.state}
                     </Badge>
+                    {bookmark.issue.isWorking && (
+                      <Badge variant="success">
+                        <CheckCircle2 className="mr-1 h-3 w-3" />
+                        Working
+                      </Badge>
+                    )}
                   </div>
                   <CardDescription className="line-clamp-3">
                     {bookmark.issue.aiSummary || "No AI summary available yet."}
@@ -223,6 +244,17 @@ export function BookmarksPage() {
                     >
                       <ExternalLink className="h-4 w-4" />
                     </a>
+                    <Button
+                      type="button"
+                      variant={bookmark.issue.isWorking ? "secondary" : "outline"}
+                      size="icon"
+                      onClick={() => workingMutation.mutate(bookmark.issue.id)}
+                      disabled={workingMutation.isPending}
+                      aria-label={bookmark.issue.isWorking ? "Stop working on this issue" : "Mark as working"}
+                      title={bookmark.issue.isWorking ? "Stop working" : "Working on this"}
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                    </Button>
                     <Button
                       type="button"
                       variant="outline"

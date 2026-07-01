@@ -1,9 +1,18 @@
 import { NextResponse } from "next/server";
+import { invalidateUserFeedCaches } from "@/lib/feed-cache";
 import { prisma } from "@/lib/prisma";
-import { redis } from "@/lib/redis";
 import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
+
+async function deleteIssueCache(issueId: string) {
+  try {
+    const { redis } = await import("@/lib/redis");
+    await redis.del(`issue:${issueId}`);
+  } catch (error) {
+    console.error("[working] Failed to delete issue cache", { issueId, error });
+  }
+}
 
 async function getDbUser() {
   const supabase = await createClient();
@@ -40,7 +49,10 @@ export async function POST(
 
   if (existing) {
     await prisma.workingOn.delete({ where: { id: existing.id } });
-    await redis.del(`issue:${issueId}`);
+    await Promise.all([
+      deleteIssueCache(issueId),
+      invalidateUserFeedCaches(dbUser.id, "working-cleared"),
+    ]);
     return NextResponse.json({ working: false });
   }
 
@@ -51,7 +63,10 @@ export async function POST(
     },
   });
 
-  await redis.del(`issue:${issueId}`);
+  await Promise.all([
+    deleteIssueCache(issueId),
+    invalidateUserFeedCaches(dbUser.id, "working-created"),
+  ]);
 
   return NextResponse.json({ working: true });
 }

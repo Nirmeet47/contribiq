@@ -8,6 +8,7 @@ import {
   BookOpen,
   Bookmark,
   Code2,
+  FolderGit2,
   Inbox,
   LayoutDashboard,
   LogOut,
@@ -17,6 +18,7 @@ import {
 
 const NAV_ITEMS = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
+  { label: "Projects", icon: FolderGit2, href: "/projects" },
   { label: "Matches", icon: Inbox, href: "/matches" },
   { label: "Bookmarks", icon: Bookmark, href: "/bookmarks" },
   { label: "Skills", icon: BookOpen, href: "/skills" },

@@ -4,6 +4,7 @@ import { AppShell } from "@/app/app-shell";
 import { LogOut } from "lucide-react";
 import { DashboardSidebar } from "./DashboardSidebar";
 import { RecommendedIssues } from "./RecommendedIssues";
+import { WorkingIssues } from "./WorkingIssues";
 
 export function DashboardHome({
   name,
@@ -26,7 +27,8 @@ export function DashboardHome({
         </div>
 
         <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2">
+          <div className="space-y-6 lg:col-span-2">
+            <WorkingIssues />
             <RecommendedIssues />
           </div>
           <DashboardSidebar />
