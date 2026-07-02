@@ -141,10 +141,6 @@ export default function DashboardPage() {
     }
 
     sseStarted.current = true;
-    setIsError(false);
-    setIsDone(false);
-    setCurrentStep("fetching");
-    setMessage("Connecting to GitHub...");
 
     const eventSource = new EventSource("/api/onboarding/progress");
     eventSourceRef.current = eventSource;
