@@ -1,7 +1,6 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { DashboardPageLayout } from "@/components/dashboard/DashboardPageLayout";
 import { normalizeSkillName, skillIdentity } from "@/lib/skills";
 import {
   AlertCircle,
@@ -230,8 +229,7 @@ export default function SkillsPage() {
   }
 
   return (
-    <DashboardPageLayout>
-      <section className="mx-auto max-w-6xl space-y-6 px-6 py-8 sm:px-8">
+    <section className="mx-auto max-w-6xl space-y-6 px-6 py-8 sm:px-8">
         <header className="flex flex-col gap-5 border-b border-zinc-900 pb-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-emerald-400">Profile signals</p>
@@ -418,7 +416,6 @@ export default function SkillsPage() {
             })}
           </div>
         )}
-      </section>
-    </DashboardPageLayout>
+    </section>
   );
 }

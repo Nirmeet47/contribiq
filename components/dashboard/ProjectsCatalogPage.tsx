@@ -11,7 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Activity, ArrowRight, Code2, ExternalLink, GitFork, Search, Star } from "lucide-react";
+import { Activity, ExternalLink, GitFork, Search, Star } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -209,33 +209,7 @@ export function ProjectsCatalogPage() {
   const categoryOptions = projectsQuery.data?.filters.categories.slice(0, 12) ?? [];
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-50 font-sans selection:bg-emerald-500/30">
-      <nav className="sticky top-0 z-50 border-b border-zinc-900 bg-zinc-950/85 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-          <Link href="/" className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center bg-white">
-              <Code2 className="h-5 w-5 text-zinc-950" strokeWidth={2.5} />
-            </div>
-            <span className="text-lg font-bold tracking-tight">ContribIQ</span>
-          </Link>
-          <div className="flex items-center gap-3">
-            <Link
-              href="/projects"
-              className="rounded-sm bg-zinc-900 px-3 py-2 text-sm font-medium text-white"
-            >
-              Projects
-            </Link>
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-medium text-zinc-950 transition-colors hover:bg-zinc-200"
-            >
-              Dashboard <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-        </div>
-      </nav>
-
-      <section className="mx-auto max-w-7xl space-y-6 px-6 py-8">
+    <section className="mx-auto max-w-7xl space-y-6 px-6 py-8">
         <div className="flex flex-col gap-4 border-b border-zinc-900 pb-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-emerald-500">
@@ -412,7 +386,6 @@ export function ProjectsCatalogPage() {
             </div>
           </div>
         )}
-      </section>
-    </main>
+    </section>
   );
 }

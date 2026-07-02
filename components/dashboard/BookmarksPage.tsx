@@ -13,7 +13,6 @@ import {
 } from "@/components/ui/card";
 import { Bookmark, CheckCircle2, Clock, ExternalLink, GitPullRequest, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { DashboardPageLayout } from "./DashboardPageLayout";
 
 type BookmarkIssue = {
   id: string;
@@ -105,8 +104,7 @@ export function BookmarksPage() {
   const bookmarks = bookmarksQuery.data?.bookmarks ?? [];
 
   return (
-    <DashboardPageLayout>
-      <section className="mx-auto max-w-6xl space-y-8 px-6 py-8">
+    <section className="mx-auto max-w-6xl space-y-8 px-6 py-8">
         <div className="flex flex-col gap-4 border-b border-zinc-900 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-emerald-500">
@@ -272,7 +270,6 @@ export function BookmarksPage() {
             ))}
           </div>
         )}
-      </section>
-    </DashboardPageLayout>
+    </section>
   );
 }
