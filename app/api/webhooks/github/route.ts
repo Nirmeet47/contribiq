@@ -39,6 +39,32 @@ function issueStateForAction(action: string) {
   return null;
 }
 
+type GitHubWebhookPayload = {
+  action?: unknown;
+  repository?: {
+    owner?: { login?: unknown };
+    name?: unknown;
+  };
+  issue?: {
+    id?: unknown;
+    number?: unknown;
+    title?: unknown;
+    body?: unknown;
+    labels?: unknown;
+    assignees?: unknown;
+    comments?: unknown;
+    html_url?: unknown;
+  };
+  pull_request?: {
+    merged?: unknown;
+    number?: unknown;
+    title?: unknown;
+    html_url?: unknown;
+    merged_at?: unknown;
+    user?: { id?: unknown };
+  };
+};
+
 function issueLabelNames(labels: unknown) {
   if (!Array.isArray(labels)) return undefined;
 
@@ -54,7 +80,7 @@ function issueLabelNames(labels: unknown) {
     .filter((name): name is string => Boolean(name));
 }
 
-async function syncIssueState(payload: Record<string, any>) {
+async function syncIssueState(payload: GitHubWebhookPayload) {
   const nextState = issueStateForAction(String(payload.action ?? ""));
   if (!nextState) return;
 
@@ -120,7 +146,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
-  const payload = JSON.parse(rawBody);
+  const payload = JSON.parse(rawBody) as GitHubWebhookPayload;
   const event = request.headers.get("x-github-event");
 
   if (event === "issues") {
@@ -136,13 +162,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const prNumber = payload.pull_request.number as number;
-  const prTitle = payload.pull_request.title as string;
-  const prUrl = payload.pull_request.html_url as string;
-  const mergedAt = new Date(payload.pull_request.merged_at as string);
-  const repoOwner = payload.repository.owner.login as string;
-  const repoName = payload.repository.name as string;
-  const githubUserId = payload.pull_request.user.id as number;
+  const pullRequest = payload.pull_request;
+  const repoOwner = payload.repository?.owner?.login;
+  const repoName = payload.repository?.name;
+  const prNumber = pullRequest.number;
+  const prTitle = pullRequest.title;
+  const prUrl = pullRequest.html_url;
+  const mergedAtValue = pullRequest.merged_at;
+  const githubUserId = pullRequest.user?.id;
+
+  if (
+    typeof repoOwner !== "string" ||
+    typeof repoName !== "string" ||
+    typeof prNumber !== "number" ||
+    typeof prTitle !== "string" ||
+    typeof prUrl !== "string" ||
+    typeof mergedAtValue !== "string" ||
+    typeof githubUserId !== "number"
+  ) {
+    return NextResponse.json({ error: "Invalid pull request payload" }, { status: 400 });
+  }
+
+  const mergedAt = new Date(mergedAtValue);
 
   const user = await prisma.user.findFirst({
     where: { githubId: githubUserId },
