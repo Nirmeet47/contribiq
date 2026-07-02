@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bookmark,
   BookmarkCheck,
+  CheckCircle2,
   Clock,
   GitPullRequest,
   ThumbsDown,
@@ -207,6 +208,24 @@ function RecommendedIssueCard({
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["feed"] }),
   });
 
+  const workingMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/issues/${match.issue.id}/working`, {
+        method: "POST",
+      });
+      if (!response.ok) throw new Error("Failed to mark issue as working");
+      return (await response.json()) as { working: boolean };
+    },
+    onSuccess: (payload) => {
+      if (payload.working) {
+        onDismiss(match.issue.id);
+      }
+      queryClient.invalidateQueries({ queryKey: ["working"] });
+      queryClient.invalidateQueries({ queryKey: ["feed"] });
+      queryClient.invalidateQueries({ queryKey: ["bookmarks"] });
+    },
+  });
+
   return (
     <article className="rounded-sm border border-zinc-800 bg-zinc-950 p-5 transition-colors hover:border-zinc-700">
       <div className="mb-4 flex items-start justify-between gap-4">
@@ -279,6 +298,16 @@ function RecommendedIssueCard({
           </Link>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => workingMutation.mutate()}
+            disabled={workingMutation.isPending}
+            className="rounded-sm border border-emerald-500/30 bg-emerald-500/10 p-2 text-emerald-300 transition-colors hover:border-emerald-400/50 hover:bg-emerald-500/15 disabled:opacity-50"
+            aria-label="Mark as working"
+            title="Working on this"
+          >
+            <CheckCircle2 className="h-4 w-4" />
+          </button>
           <a
             href={match.issue.githubUrl}
             target="_blank"

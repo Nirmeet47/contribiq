@@ -1,0 +1,36 @@
+"use client";
+
+import { LogOut } from "lucide-react";
+import { DashboardRightPanel } from "./DashboardRightPanel";
+import { RecommendedIssues } from "./RecommendedIssues";
+import { WorkingIssues } from "./WorkingIssues";
+
+export function DashboardHome({
+  name,
+  onLogout,
+}: {
+  name: string;
+  onLogout: () => void;
+}) {
+  return (
+    <section className="p-6 sm:p-8">
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-zinc-500">Welcome back</p>
+          <h1 className="text-2xl font-bold tracking-tight">{name}</h1>
+        </div>
+        <button onClick={onLogout} className="flex items-center gap-2 rounded-sm border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800 md:hidden">
+          <LogOut className="h-4 w-4" /> Sign Out
+        </button>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <WorkingIssues />
+          <RecommendedIssues />
+        </div>
+        <DashboardRightPanel />
+      </div>
+    </section>
+  );
+}

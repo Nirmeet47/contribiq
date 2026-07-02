@@ -1,7 +1,6 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AppShell } from "@/app/app-shell";
 import {
   Clock,
   ExternalLink,
@@ -181,16 +180,11 @@ export default function IssuePage({
   });
 
   if (issueQuery.isLoading) {
-    return (
-      <AppShell>
-        <LoadingSkeleton />
-      </AppShell>
-    );
+    return <LoadingSkeleton />;
   }
 
   if (issueQuery.isError || !issueQuery.data) {
     return (
-      <AppShell>
       <section className="flex min-h-screen items-center justify-center p-6 text-zinc-50">
         <div className="w-full max-w-md rounded-sm border border-red-500/30 bg-red-500/10 p-5 text-center">
           <p className="mb-4 text-sm font-medium text-red-300">Issue could not be loaded.</p>
@@ -204,7 +198,6 @@ export default function IssuePage({
           </button>
         </div>
       </section>
-      </AppShell>
     );
   }
 
@@ -212,7 +205,6 @@ export default function IssuePage({
   const matchScore = match ? Math.round(match.score * 100) : 0;
 
   return (
-    <AppShell>
     <section className="p-6 text-zinc-50 sm:p-8">
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="space-y-2">
@@ -454,6 +446,6 @@ export default function IssuePage({
         </div>
       </div>
     </section>
-    </AppShell>
   );
 }
+

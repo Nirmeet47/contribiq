@@ -228,6 +228,9 @@ export async function GET(request: Request) {
         feedback: {
           none: { userId: dbUser.id },
         },
+        workingOn: {
+          none: { userId: dbUser.id },
+        },
       },
     },
     orderBy: { score: sort },

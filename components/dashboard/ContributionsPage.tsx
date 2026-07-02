@@ -1,7 +1,6 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { AppShell } from "@/app/app-shell";
 import { Activity, Flame, GitCommit, GitPullRequest, Star } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -195,8 +194,7 @@ export function ContributionsPage() {
   }
 
   return (
-    <AppShell>
-      <div className="mx-auto max-w-6xl space-y-8 px-6 py-8">
+    <div className="mx-auto max-w-6xl space-y-8 px-6 py-8">
         <section className="flex flex-col gap-3 border-b border-zinc-900 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-emerald-500">
@@ -412,7 +410,6 @@ export function ContributionsPage() {
             {copied ? "Copied!" : "Copy"}
           </button>
         </section>
-      </div>
-    </AppShell>
+    </div>
   );
 }

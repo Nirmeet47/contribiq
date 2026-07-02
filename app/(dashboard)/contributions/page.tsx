@@ -1,4 +1,4 @@
-import { ContributionsPage } from "@/app/dashboard/components/ContributionsPage";
+import { ContributionsPage } from "@/components/dashboard/ContributionsPage";
 
 export default function ContributionsRoute() {
   return <ContributionsPage />;

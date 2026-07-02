@@ -55,7 +55,7 @@ async function fetchContributionStats() {
   return (await response.json()) as ContributionStatsResponse;
 }
 
-export function DashboardSidebar() {
+export function DashboardRightPanel() {
   const meQuery = useQuery({ queryKey: ["me"], queryFn: fetchMe });
   const topSkills = (meQuery.data?.skillProfile?.skills ?? [])
     .toSorted((a, b) => b.confidence - a.confidence)
