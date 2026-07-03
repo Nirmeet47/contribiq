@@ -45,8 +45,11 @@ export function TrendingInStack({
   });
 
   return (
-    <section className="space-y-3">
-      <h2 className="text-sm font-bold text-zinc-100">Trending in your stack</h2>
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-xl font-bold tracking-tight text-zinc-100">Trending in your stack</h2>
+        <p className="mt-1 text-xs font-medium text-zinc-500">Repositories aligned with your profile</p>
+      </div>
       <div
         className="custom-scrollbar scroll-fade h-[336px] space-y-2 overflow-y-scroll rounded-sm border border-zinc-900 bg-zinc-950/60 p-2 pr-1"
         aria-label="Trending repositories in your stack"

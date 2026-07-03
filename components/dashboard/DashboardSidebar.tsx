@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation";
 import {
   BookOpen,
   Bookmark,
+  CheckCircle2,
   Code2,
-  Inbox,
   LayoutDashboard,
   LogOut,
   Settings,
@@ -16,7 +16,7 @@ import { createClient } from "@/utils/supabase/client";
 
 const NAV_ITEMS = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-  { label: "Matches", icon: Inbox, href: "/matches" },
+  { label: "Working", icon: CheckCircle2, href: "/working" },
   { label: "Bookmarks", icon: Bookmark, href: "/bookmarks" },
   { label: "Skills", icon: BookOpen, href: "/skills" },
   { label: "Contributions", icon: Trophy, href: "/contributions" },
