@@ -3,12 +3,19 @@
 # Skips issue fetching — only classifies unclassified issues and rescores matches.
 # Safe to re-run anytime — skips already-classified issues, upserts matches.
 #
-# Rate limits (free tier):
-#   Groq  — ~30 req/min  → GROQ_SLEEP controls delay between calls
+# Model: openai/gpt-oss-120b (migrated off llama-3.3-70b-versatile, deprecated
+# by Groq — decommissioned 2026-08-16). gpt-oss-120b is a reasoning model, so
+# we set reasoning_effort="low" to keep it fast/cheap for a simple JSON task,
+# plus response_format=json_object to keep output parse-clean.
+#
+# Rate limits — CHECK YOUR CURRENT GROQ CONSOLE LIMITS for gpt-oss-120b on your
+# tier before relying on the values below; they differ from the old llama-3.3
+# limits and may change:
+#   Groq  — GROQ_SLEEP controls delay between calls
 #   Gemini — 100 req/min, 1500 req/day → won't be the bottleneck at these volumes
 #
-# Tune MAX_CLASSIFY based on your plan:
-#   Groq free  → 25-30 per run, run multiple times
+# Tune MAX_CLASSIFY based on your plan and current rate limits:
+#   Groq free  → start conservative, run multiple times
 #   Groq paid  → bump to 500+
 #
 # Run: python scripts/classify_and_match.py
@@ -32,7 +39,7 @@ logging.basicConfig(
 log = logging.getLogger("classify_and_match")
 
 # ── config — tune these ────────────────────────────────────────────────────────
-MAX_CLASSIFY  = 25       # issues to classify per run (free Groq: keep at 25-30)
+MAX_CLASSIFY  = 50    # issues to classify per run (free Groq: keep at 25-30)
 GROQ_SLEEP    = 2.5      # seconds between Groq calls (free: 2.5, paid: 0.5)
 GEMINI_SLEEP  = 0.7      # seconds between Gemini embed calls
 # ──────────────────────────────────────────────────────────────────────────────
@@ -76,13 +83,15 @@ def classify_issue(title, body, repo_full_name):
     raw = ""
     try:
         response = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",
             messages=[
                 {"role": "system", "content": CLASSIFY_SYSTEM_PROMPT},
                 {"role": "user",   "content": user_msg},
             ],
             temperature=0.1,
             max_tokens=300,
+            reasoning_effort="low",
+            response_format={"type": "json_object"},
         )
         raw = response.choices[0].message.content or ""
         match = re.search(r"\{[\s\S]*\}", raw)
