@@ -358,7 +358,15 @@ export function RecommendedIssues() {
     feedQuery.data?.matches.filter((match) => !dismissedIssueIds.has(match.issue.id)) ?? [];
 
   return (
-    <div className="space-y-5">
+    <section className="space-y-6">
+      <div className="border-b border-zinc-900 pb-6">
+        <p className="text-xs font-bold uppercase tracking-widest text-emerald-400">Personalized feed</p>
+        <h2 className="mt-2 text-3xl font-bold tracking-tight text-zinc-100">Matched repos</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
+          Issues ranked from your skills, interests, and contribution history.
+        </p>
+      </div>
+
       <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-4">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-wrap gap-2">
@@ -414,7 +422,7 @@ export function RecommendedIssues() {
       </div>
 
       {feedQuery.isLoading && (
-        <div className="custom-scrollbar h-[calc(100vh-245px)] min-h-[520px] space-y-4 overflow-y-auto pr-2">
+        <div className="custom-scrollbar h-[calc(100vh-315px)] min-h-[520px] space-y-4 overflow-y-auto pr-2">
           {[1, 2, 3].map((item) => (
             <RecommendedIssueSkeleton key={item} />
           ))}
@@ -443,7 +451,7 @@ export function RecommendedIssues() {
 
       {visibleMatches.length > 0 && (
         <div
-          className="custom-scrollbar h-[calc(100vh-245px)] min-h-[520px] space-y-4 overflow-y-auto pr-2"
+          className="custom-scrollbar h-[calc(100vh-315px)] min-h-[520px] space-y-4 overflow-y-auto pr-2"
           aria-label="Recommended issues"
         >
           {visibleMatches.map((match) => (
@@ -464,6 +472,6 @@ export function RecommendedIssues() {
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }

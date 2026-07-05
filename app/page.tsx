@@ -1,4 +1,5 @@
 import Link from "next/link"
+import Image from "next/image"
 import { ArrowRight, Code2, GitMerge, GitPullRequest, Search, Star, Terminal, Cpu, Layers, Zap } from "lucide-react"
 
 import { createClient } from "@/utils/supabase/server"
@@ -37,8 +38,8 @@ const HOW_IT_WORKS_STEPS = [
     icon: Cpu,
     title: "Analyze your GitHub history",
     description:
-      "Connect your GitHub account. ContribIQ reads your commits, merged PRs, and language patterns — building a precise skill profile, not a vague tag cloud.",
-    detail: "Skill Profiling Agent · LangChain + Claude",
+      "Connect your GitHub account. ContribIQ reads your commits, merged PRs, and language patterns - building a precise skill profile, not a vague tag cloud.",
+    detail: "Skill Profiling Agent - LangChain + Claude",
   },
   {
     step: "02",
@@ -46,7 +47,7 @@ const HOW_IT_WORKS_STEPS = [
     title: "Match against classified issues",
     description:
       "Every open issue across 50+ curated repos is classified by difficulty, required skills, and type. A cosine-similarity engine scores each issue against your profile.",
-    detail: "pgvector embeddings · weighted scoring",
+    detail: "pgvector embeddings - weighted scoring",
   },
   {
     step: "03",
@@ -54,7 +55,7 @@ const HOW_IT_WORKS_STEPS = [
     title: "Contribute. Get credit.",
     description:
       "Pick an issue, open a PR. When it merges, a webhook captures your contribution, summarizes the diff with AI, and updates your skill graph automatically.",
-    detail: "Contribution Summary Agent · real-time webhooks",
+    detail: "Contribution Summary Agent - real-time webhooks",
   },
 ]
 
@@ -147,7 +148,7 @@ export default async function Home() {
                 How It Works
               </p>
               <h2 className="text-3xl font-bold tracking-tight max-w-sm">
-                From commit history to the right issue — in minutes.
+                From commit history to the right issue - in minutes.
               </h2>
             </div>
             <p className="max-w-xs text-sm text-zinc-500 leading-relaxed md:text-right">
@@ -157,7 +158,7 @@ export default async function Home() {
 
           {/* Steps */}
           <div className="relative grid gap-0 md:grid-cols-3">
-            {/* Connector line — desktop only */}
+            {/* Connector line - desktop only */}
             <div className="absolute top-[2.75rem] left-[calc(16.666%+1.5rem)] right-[calc(16.666%+1.5rem)] hidden md:block h-px bg-gradient-to-r from-zinc-800 via-indigo-900/60 to-zinc-800" />
 
             {HOW_IT_WORKS_STEPS.map(({ step, icon: Icon, title, description, detail }, i) => (
@@ -192,7 +193,7 @@ export default async function Home() {
                   </div>
                 </div>
 
-                {/* Right border divider between columns — desktop */}
+                {/* Right border divider between columns - desktop */}
                 {i < HOW_IT_WORKS_STEPS.length - 1 && (
                   <div className="hidden md:block absolute top-0 right-0 bottom-0 w-px bg-zinc-900" />
                 )}
@@ -205,7 +206,7 @@ export default async function Home() {
             <div className="flex items-center gap-3">
               <Zap className="h-4 w-4 text-indigo-400 flex-shrink-0" />
               <p className="text-sm text-zinc-400">
-                The whole pipeline — auth, profiling, matching — runs end-to-end before you see your first issue.
+                The whole pipeline - auth, profiling, matching - runs end-to-end before you see your first issue.
               </p>
             </div>
             <Link
@@ -252,9 +253,11 @@ export default async function Home() {
                 <div>
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex h-10 w-10 items-center justify-center border border-zinc-800 bg-zinc-900 rounded-sm">
-                      <img
+                      <Image
                         src={repo.owner.avatar_url}
                         alt={repo.owner.login}
+                        width={24}
+                        height={24}
                         className="h-6 w-6 opacity-80 grayscale group-hover:grayscale-0 transition-all"
                       />
                     </div>
@@ -308,7 +311,7 @@ export default async function Home() {
             <div className="h-4 w-4 bg-zinc-800"></div>
             ContribIQ
           </div>
-          <p>© {new Date().getFullYear()} ContribIQ. All rights reserved.</p>
+          <p>(c) {new Date().getFullYear()} ContribIQ. All rights reserved.</p>
         </div>
       </footer>
     </main>

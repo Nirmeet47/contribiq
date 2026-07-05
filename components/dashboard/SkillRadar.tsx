@@ -38,10 +38,10 @@ export function SkillRadar({ skills }: { skills: RadarSkill[] }) {
         ];
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-5">
       <div>
-        <h2 className="text-sm font-bold text-zinc-100">Skill radar</h2>
-        <p className="text-xs font-medium text-zinc-500">Top confidence signals</p>
+        <h2 className="text-xl font-bold tracking-tight text-zinc-100">Skill radar</h2>
+        <p className="mt-1 text-xs font-medium text-zinc-500">Top confidence signals</p>
       </div>
       <div className="h-[250px] w-full">
         <ResponsiveContainer width="100%" height={250}>
