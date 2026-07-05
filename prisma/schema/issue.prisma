@@ -4,7 +4,7 @@
 
 model Issue {
   id            String     @id @default(cuid())
-  githubId      Int
+  githubId      BigInt
   repoId        String
   title         String
   body          String?    @db.Text

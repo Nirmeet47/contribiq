@@ -17,7 +17,7 @@ import { useState } from "react";
 
 type ProjectSort = "activity" | "stars" | "issues" | "health" | "name";
 
-type ProjectRepo = {
+export type ProjectRepo = {
   id: string;
   owner: string;
   name: string;
@@ -32,6 +32,7 @@ type ProjectRepo = {
   openIssueCount: number;
   classifiedIssueCount: number;
   lastFetchedAt: string | null;
+  difficultyCounts?: Record<string, number>;
 };
 
 type ProjectsResponse = {
@@ -112,7 +113,7 @@ function MetricBar({ label, value }: { label: string; value: number }) {
   );
 }
 
-function ProjectCard({ repo }: { repo: ProjectRepo }) {
+export function ProjectCard({ repo }: { repo: ProjectRepo }) {
   return (
     <Card className="flex min-h-[296px] flex-col transition-colors hover:border-zinc-700">
       <CardHeader>

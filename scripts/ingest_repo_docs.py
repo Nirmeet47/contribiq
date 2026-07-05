@@ -1,22 +1,30 @@
 # scripts/ingest_repo_docs.py
 #
-# Builds per-repo FAISS indexes from README.md and CONTRIBUTING.md.
+# Ingests README.md and CONTRIBUTING.md into repo_docs pgvector chunks.
 #
 # Run: python scripts/ingest_repo_docs.py
+#      python scripts/ingest_repo_docs.py --repo vercel/next.js
 # Needs: GITHUB_TOKEN, GEMINI_API_KEY, DATABASE_URL in .env
 #
-# Safe to re-run for repos whose faiss index path is still null.
+# Safe to re-run. Unchanged docs are skipped by sha256 content hash.
+# A doc's hash is only ever recorded once ALL of its chunks embed
+# successfully — so a run that gets rate-limited partway through never
+# marks a doc "done" with missing chunks. If Gemini's quota runs out,
+# the whole run stops immediately (no point burning GitHub calls on
+# the remaining repos) and the *next* run picks up exactly where this
+# one left off, since already-completed repos are skipped by hash
+# in a couple of cheap DB lookups.
 
+import argparse
 import base64
+import hashlib
 import json
 import logging
 import os
 import re
 import time
 
-import faiss
 import httpx
-import numpy as np
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
@@ -42,51 +50,48 @@ GITHUB_HEADERS = {
 }
 
 DOC_PATHS = ("README.md", "CONTRIBUTING.md")
-FAISS_DIR = "/data/faiss"
 EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIMENSIONS = 768
 CHUNK_TOKENS = 500
 CHUNK_OVERLAP = 50
+FETCH_FAILED = object()
 
 genai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 
-def resolve_faiss_column(conn) -> str:
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT column_name
-        FROM information_schema.columns
-        WHERE table_name = 'repos'
-          AND column_name IN ('faiss_index_path', 'faissIndexPath')
-        """
-    )
-    columns = {row[0] for row in cur.fetchall()}
-    cur.close()
-
-    if "faiss_index_path" in columns:
-        return "faiss_index_path"
-    if "faissIndexPath" in columns:
-        return "faissIndexPath"
-    raise RuntimeError("repos table has no FAISS index path column")
+class QuotaExhausted(Exception):
+    """Raised when the Gemini API reports quota/rate-limit exhaustion.
+    Propagates all the way up to main() to stop the run immediately —
+    every remaining embed call this run would just fail the same way."""
+    pass
 
 
-def fetch_repos(conn, faiss_column: str) -> list[dict]:
+def fetch_repos(conn, repo_filter: str | None = None) -> list[dict]:
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute(
-        f'''
-        SELECT id, owner, name, "fullName"
-        FROM repos
-        WHERE "{faiss_column}" IS NULL
-        ORDER BY "createdAt"
-        '''
-    )
+    if repo_filter:
+        cur.execute(
+            '''
+            SELECT id, owner, name, "fullName"
+            FROM repos
+            WHERE id = %s OR "fullName" = %s
+            ORDER BY "createdAt"
+            ''',
+            (repo_filter, repo_filter),
+        )
+    else:
+        cur.execute(
+            '''
+            SELECT id, owner, name, "fullName"
+            FROM repos
+            ORDER BY "createdAt"
+            '''
+        )
     repos = cur.fetchall()
     cur.close()
     return repos
 
 
-def fetch_doc(owner: str, repo: str, path: str) -> str | None:
+def fetch_doc(owner: str, repo: str, path: str) -> tuple[str, str] | None | object:
     url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
 
     try:
@@ -96,7 +101,7 @@ def fetch_doc(owner: str, repo: str, path: str) -> str | None:
         if response.status_code == 403:
             log.warning(f"  {owner}/{repo} {path} rate limited, waiting 60s")
             time.sleep(60)
-            return None
+            return FETCH_FAILED
 
         response.raise_for_status()
         payload = response.json()
@@ -104,11 +109,41 @@ def fetch_doc(owner: str, repo: str, path: str) -> str | None:
         if not encoded:
             return None
 
-        return base64.b64decode(encoded).decode("utf-8", errors="replace")
+        raw_content = base64.b64decode(encoded)
+        raw_hash = hashlib.sha256(raw_content).hexdigest()
+        return raw_content.decode("utf-8", errors="replace"), raw_hash
 
     except Exception as e:
         log.warning(f"  {owner}/{repo} {path} fetch failed: {e}")
-        return None
+        return FETCH_FAILED
+
+
+def existing_content_hash(conn, repo_id: str, path: str) -> str | None:
+    cur = conn.cursor()
+    cur.execute(
+        '''
+        SELECT "contentHash"
+        FROM repo_docs
+        WHERE "repoId" = %s AND "filePath" = %s
+        LIMIT 1
+        ''',
+        (repo_id, path),
+    )
+    row = cur.fetchone()
+    cur.close()
+    return row[0] if row else None
+
+
+def delete_doc_chunks(conn, repo_id: str, path: str) -> None:
+    cur = conn.cursor()
+    cur.execute(
+        '''
+        DELETE FROM repo_docs
+        WHERE "repoId" = %s AND "filePath" = %s
+        ''',
+        (repo_id, path),
+    )
+    cur.close()
 
 
 def chunk_document(path: str, text: str) -> list[str]:
@@ -130,7 +165,10 @@ def chunk_document(path: str, text: str) -> list[str]:
     return chunks
 
 
-def embed_chunk(text: str) -> list[float] | None:
+def embed(text: str) -> list[float]:
+    """Returns the embedding vector, or raises QuotaExhausted if Gemini's
+    quota is exceeded. Other transient errors return None so the caller
+    can decide whether to abandon the whole doc for this run."""
     try:
         response = genai_client.models.embed_content(
             model=EMBEDDING_MODEL,
@@ -139,123 +177,186 @@ def embed_chunk(text: str) -> list[float] | None:
         )
         return response.embeddings[0].values
     except Exception as e:
+        message = str(e)
+        if "RESOURCE_EXHAUSTED" in message or "429" in message:
+            raise QuotaExhausted(message) from e
         log.warning(f"    embed failed: {e}")
         return None
 
 
-def normalize_rows(vectors: np.ndarray) -> np.ndarray:
-    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-    norms[norms == 0] = 1.0
-    return vectors / norms
+def vector_literal(values: list[float]) -> str:
+    return json.dumps(values)
 
 
-def safe_index_name(owner: str, repo: str) -> str:
-    return re.sub(r"[^A-Za-z0-9_.-]+", "-", f"{owner}-{repo}")
-
-
-def write_index(owner: str, repo: str, chunks: list[str], vectors: list[list[float]]) -> str:
-    os.makedirs(FAISS_DIR, exist_ok=True)
-
-    matrix = np.array(vectors, dtype="float32")
-    matrix = normalize_rows(matrix)
-
-    index = faiss.IndexFlatIP(EMBEDDING_DIMENSIONS)
-    index.add(matrix)
-
-    base_name = safe_index_name(owner, repo)
-    index_path = os.path.join(FAISS_DIR, f"{base_name}.index")
-    chunks_path = os.path.join(FAISS_DIR, f"{base_name}.chunks.json")
-
-    faiss.write_index(index, index_path)
-    with open(chunks_path, "w", encoding="utf-8") as f:
-        json.dump(chunks, f, ensure_ascii=False, indent=2)
-
-    return index_path
-
-
-def update_repo_index_path(conn, repo_id: str, faiss_column: str, index_path: str) -> None:
+def insert_chunk(
+    conn,
+    repo_id: str,
+    path: str,
+    doc_hash: str,
+    chunk_index: int,
+    chunk_text: str,
+    embedding: list[float],
+) -> None:
     cur = conn.cursor()
     cur.execute(
-        f'''
-        UPDATE repos
-        SET "{faiss_column}" = %s,
+        '''
+        INSERT INTO repo_docs (
+            id, "repoId", "filePath", "contentHash", "chunkIndex",
+            "chunkText", embedding, "updatedAt"
+        )
+        VALUES (
+            gen_random_uuid()::text, %s, %s, %s, %s,
+            %s, %s::vector, now()
+        )
+        ON CONFLICT ("repoId", "filePath", "chunkIndex") DO UPDATE SET
+            "contentHash" = EXCLUDED."contentHash",
+            "chunkText" = EXCLUDED."chunkText",
+            embedding = EXCLUDED.embedding,
             "updatedAt" = now()
-        WHERE id = %s
         ''',
-        (index_path, repo_id),
+        (repo_id, path, doc_hash, chunk_index, chunk_text, vector_literal(embedding)),
     )
-    conn.commit()
     cur.close()
 
 
-def ingest_repo(conn, repo: dict, faiss_column: str, index: int, total: int) -> bool:
+def ingest_doc(
+    conn, repo: dict, path: str, document: tuple[str, str] | None | object
+) -> tuple[bool, int]:
+    """Returns (changed, chunks_written). Never writes a partial doc —
+    either every chunk embeds successfully and the doc is fully
+    replaced, or nothing is touched and this doc stays 'pending' for
+    the next run. QuotaExhausted propagates up uncaught, which stops
+    the whole script."""
+    repo_id = repo["id"]
+
+    if document is FETCH_FAILED:
+        log.info(f"  {path} fetch failed, leaving existing chunks unchanged")
+        return False, 0
+
+    if document is None:
+        if existing_content_hash(conn, repo_id, path):
+            delete_doc_chunks(conn, repo_id, path)
+            conn.commit()
+            log.info(f"  {path} missing upstream; deleted old chunks")
+            return True, 0
+        log.info(f"  {path} missing, skipping")
+        return False, 0
+
+    content, doc_hash = document
+    if existing_content_hash(conn, repo_id, path) == doc_hash:
+        log.info(f"  {path} unchanged, skipping")
+        return False, 0
+
+    chunks = chunk_document(path, content)
+    if not chunks:
+        if existing_content_hash(conn, repo_id, path):
+            delete_doc_chunks(conn, repo_id, path)
+            conn.commit()
+            log.info(f"  {path} empty after chunking; deleted old chunks")
+            return True, 0
+        log.info(f"  {path} empty after chunking, skipping")
+        return False, 0
+
+    # Embed every chunk BEFORE touching the DB. If any chunk fails
+    # (for a non-quota reason), abandon this doc entirely for now —
+    # old chunks stay untouched and the doc is retried whole next run.
+    vectors: list[list[float]] = []
+    for chunk_index, chunk in enumerate(chunks):
+        vector = embed(chunk)  # raises QuotaExhausted on 429 — let it propagate
+        if vector is None:
+            log.warning(
+                f"  {path} chunk {chunk_index + 1}/{len(chunks)} failed to embed; "
+                f"leaving existing chunks untouched, will retry this doc next run"
+            )
+            return False, 0
+        vectors.append(vector)
+        log.info(f"    {path}: embedded {chunk_index + 1}/{len(chunks)} chunks")
+        time.sleep(0.1)
+
+    # All chunks embedded successfully — now it's safe to replace atomically.
+    delete_doc_chunks(conn, repo_id, path)
+    for chunk_index, (chunk, vector) in enumerate(zip(chunks, vectors)):
+        insert_chunk(conn, repo_id, path, doc_hash, chunk_index, chunk, vector)
+    conn.commit()
+
+    log.info(f"  {path} wrote {len(chunks)}/{len(chunks)} chunks")
+    return True, len(chunks)
+
+
+def ingest_repo(conn, repo: dict, index: int, total: int) -> tuple[bool, int]:
     owner, name = repo["owner"], repo["name"]
     log.info(f"[{index}/{total}] {repo['fullName']}")
 
-    documents = []
+    changed = False
+    total_chunks = 0
     for path in DOC_PATHS:
         content = fetch_doc(owner, name, path)
-        if content:
-            documents.append((path, content))
+        doc_changed, inserted = ingest_doc(conn, repo, path, content)
+        changed = changed or doc_changed
+        total_chunks += inserted
 
-    if not documents:
-        log.info(f"  {owner}/{name} README.md and CONTRIBUTING.md both missing, skipping")
-        return False
-
-    chunks = []
-    for path, content in documents:
-        chunks.extend(chunk_document(path, content))
-
-    if not chunks:
-        log.info(f"  {owner}/{name} docs were empty after chunking, skipping")
-        return False
-
-    vectors = []
-    kept_chunks = []
-    for i, chunk in enumerate(chunks):
-        vector = embed_chunk(chunk)
-        if vector:
-            vectors.append(vector)
-            kept_chunks.append(chunk)
-        log.info(f"    embedded {i + 1}/{len(chunks)} chunks")
-        time.sleep(0.1)
-
-    if not vectors:
-        log.warning(f"  {owner}/{name} produced no embeddings, skipping")
-        return False
-
-    index_path = write_index(owner, name, kept_chunks, vectors)
-    update_repo_index_path(conn, repo["id"], faiss_column, index_path)
-
-    log.info(f"  wrote {len(kept_chunks)} chunks to {index_path}")
-    return True
+    return changed, total_chunks
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Ingest repo docs into pgvector")
+    parser.add_argument(
+        "--repo",
+        help="Optional repo id or fullName (for example vercel/next.js) to ingest",
+    )
+    args = parser.parse_args()
+
     log.info("=" * 55)
     log.info("ContribIQ repo docs ingester")
     log.info("=" * 55)
 
     conn = psycopg2.connect(DATABASE_URL)
 
-    try:
-        faiss_column = resolve_faiss_column(conn)
-        repos = fetch_repos(conn, faiss_column)
-        log.info(f"Found {len(repos)} repos without FAISS indexes")
+    changed = 0
+    chunks = 0
+    stopped_early = False
 
-        indexed = 0
+    try:
+        repos = fetch_repos(conn, args.repo)
+        log.info(f"Found {len(repos)} repos to check")
+
         for i, repo in enumerate(repos):
-            if ingest_repo(conn, repo, faiss_column, i + 1, len(repos)):
-                indexed += 1
+            try:
+                repo_changed, inserted = ingest_repo(conn, repo, i + 1, len(repos))
+            except QuotaExhausted as e:
+                remaining = len(repos) - i
+                log.warning("-" * 55)
+                log.warning(f"Gemini quota exhausted: {e}")
+                log.warning(
+                    f"Stopping here — {remaining} repo(s) not yet checked "
+                    f"(starting from [{i + 1}/{len(repos)}] {repo['fullName']})."
+                )
+                log.warning(
+                    "Just run this script again once quota resets — completed "
+                    "repos are skipped automatically and it'll resume from here."
+                )
+                log.warning("-" * 55)
+                stopped_early = True
+                break
+
+            if repo_changed:
+                changed += 1
+            chunks += inserted
             time.sleep(0.3)
 
-        log.info(f"\nDone - {indexed}/{len(repos)} repos indexed\n")
+        if not stopped_early:
+            log.info(
+                f"\nDone - {changed}/{len(repos)} repos changed, {chunks} chunks written\n"
+            )
 
     finally:
         conn.close()
 
     log.info("=" * 55)
-    log.info("Repo docs ingestion complete")
+    if stopped_early:
+        log.info("Repo docs ingestion paused (quota exhausted) — rerun to resume")
+    else:
+        log.info("Repo docs ingestion complete")
     log.info("=" * 55)
 
 

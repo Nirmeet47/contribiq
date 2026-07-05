@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 import { getAppGitHubToken } from "@/lib/github-token";
 import { prisma } from "@/lib/prisma";
+import { getIssueTypeBreakdown } from "@/lib/project-intelligence";
 import { redis } from "@/lib/redis";
 import { normalizeTechName } from "@/lib/tech-names";
 
 export const dynamic = "force-dynamic";
 
-type IssueType = "bug" | "feature" | "docs" | "refactor";
-
-const ISSUE_TYPES: IssueType[] = ["bug", "feature", "docs", "refactor"];
 const BEGINNER_FRIENDLY_LABELS = new Set([
   "beginner",
   "first-timers-only",
@@ -136,12 +134,8 @@ export async function GET(
     return NextResponse.json({ error: "Repo not found" }, { status: 404 });
   }
 
-  const [groupedIssues, techStack, openIssues, openIssueLabels] = await Promise.all([
-    prisma.issue.groupBy({
-      by: ["issueType"],
-      where: { repoId, state: "open", classified: true },
-      _count: true,
-    }),
+  const [issueBreakdown, techStack, openIssues, openIssueLabels] = await Promise.all([
+    getIssueTypeBreakdown(repoId),
     fetchTechStack(repo.owner, repo.name),
     prisma.issue.findMany({
       where: { repoId, state: "open", classified: true },
@@ -163,20 +157,6 @@ export async function GET(
       select: { labels: true },
     }),
   ]);
-
-  const issueBreakdown = ISSUE_TYPES.reduce<Record<IssueType, number>>(
-    (breakdown, issueType) => {
-      breakdown[issueType] = 0;
-      return breakdown;
-    },
-    { bug: 0, feature: 0, docs: 0, refactor: 0 }
-  );
-
-  for (const item of groupedIssues) {
-    if (item.issueType) {
-      issueBreakdown[item.issueType] = item._count;
-    }
-  }
 
   const payload = {
     repo: {

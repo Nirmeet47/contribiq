@@ -22,6 +22,8 @@
 
 import os
 import json
+import shutil
+import subprocess
 import time
 import logging
 import psycopg2
@@ -326,6 +328,7 @@ def upsert_repo(cur, repo: dict, categories: list[str], maintainer_score: float,
             "maintainerScore"= EXCLUDED."maintainerScore",
             "activityScore"  = EXCLUDED."activityScore",
             "updatedAt"      = now()
+        RETURNING id
         """,
         (
             repo["owner"]["login"],
@@ -339,6 +342,35 @@ def upsert_repo(cur, repo: dict, categories: list[str], maintainer_score: float,
             activity_score,
         ),
     )
+    return cur.fetchone()[0]
+
+
+def enqueue_repo_doc_ingest(repo_id: str):
+    """
+    Queue the BullMQ worker path for fresh repo docs after seeding.
+    If Redis or npm/tsx is unavailable, the scheduled worker still catches up.
+    """
+    if not os.environ.get("REDIS_URL"):
+        log.info("     repo doc ingest not queued (REDIS_URL is not set)")
+        return
+
+    npx = shutil.which("npx") or shutil.which("npx.cmd")
+    if not npx:
+        log.info("     repo doc ingest not queued (npx not found)")
+        return
+
+    try:
+        subprocess.run(
+            [npx, "tsx", "scripts/enqueue-repo-doc-ingest.ts", repo_id],
+            cwd=os.path.join(os.path.dirname(__file__), ".."),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        log.info("     queued repo doc ingest")
+    except Exception as e:
+        log.warning(f"     repo doc ingest queue failed: {e}")
 
 
 # ─── main ──────────────────────────────────────────────────────────────────────
@@ -388,9 +420,10 @@ def seed():
             activity_score = compute_activity_score(repo)
 
             try:
-                upsert_repo(cur, repo, categories, maintainer_score, activity_score)
+                repo_id = upsert_repo(cur, repo, categories, maintainer_score, activity_score)
                 conn.commit()
                 seeded += 1
+                enqueue_repo_doc_ingest(repo_id)
                 log.info(f"     ✓ saved ({seeded} total)")
             except Exception as e:
                 conn.rollback()

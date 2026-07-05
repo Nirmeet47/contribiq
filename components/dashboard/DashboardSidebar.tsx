@@ -7,10 +7,13 @@ import {
   Bookmark,
   CheckCircle2,
   Code2,
+  Compass,
+  Inbox,
   LayoutDashboard,
   LogOut,
   Settings,
   Trophy,
+  UserRound,
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 
@@ -18,8 +21,10 @@ const NAV_ITEMS = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
   { label: "Working", icon: CheckCircle2, href: "/working" },
   { label: "Bookmarks", icon: Bookmark, href: "/bookmarks" },
+  { label: "Discover", icon: Compass, href: "/discover" },
   { label: "Skills", icon: BookOpen, href: "/skills" },
   { label: "Contributions", icon: Trophy, href: "/contributions" },
+  { label: "Profile", icon: UserRound, href: "/profile" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];
 

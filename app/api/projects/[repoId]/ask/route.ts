@@ -1,11 +1,12 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-import { IndexFlatIP } from "faiss-node";
+import { ChatGroq } from "@langchain/groq";
+import { tool } from "@langchain/core/tools";
+import { createAgent } from "langchain";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { embed } from "@/lib/embeddings";
-import { groq, GROQ_MODEL } from "@/lib/groq";
+import { GROQ_MODEL } from "@/lib/groq";
 import { prisma } from "@/lib/prisma";
+import { getProjectStats } from "@/lib/project-intelligence";
 import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,14 @@ export const runtime = "nodejs";
 
 const askSchema = z.object({
   query: z.string().trim().min(1),
+  messages: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string(),
+      })
+    )
+    .optional(),
 });
 
 async function getDbUserId() {
@@ -35,17 +44,125 @@ async function getDbUserId() {
   return dbUser?.id ?? null;
 }
 
-function normalizeVector(vector: number[]) {
-  const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
-  if (norm === 0) return vector;
-  return vector.map((value) => value / norm);
+function toVectorLiteral(values: number[]) {
+  return `[${values.join(",")}]`;
 }
 
-function chunksPathForIndex(indexPath: string) {
-  return path.join(
-    path.dirname(indexPath),
-    `${path.basename(indexPath, ".index")}.chunks.json`
+type ProjectAskRepo = {
+  id: string;
+  owner: string;
+  name: string;
+};
+
+function buildProjectTools(repo: ProjectAskRepo) {
+  const searchDocs = tool(
+    async ({ query }) => {
+      const queryVector = toVectorLiteral(await embed(query));
+      const sourceRows = await prisma.$queryRaw<Array<{ chunkText: string }>>`
+        SELECT "chunkText"
+        FROM repo_docs
+        WHERE "repoId" = ${repo.id}
+        ORDER BY embedding <=> ${queryVector}::vector
+        LIMIT 4
+      `;
+
+      if (sourceRows.length === 0) {
+        return "No README.md or CONTRIBUTING.md chunks are indexed for this repo yet.";
+      }
+
+      return sourceRows
+        .map((row, index) => `Chunk ${index + 1}:\n${row.chunkText}`)
+        .join("\n\n---\n\n");
+    },
+    {
+      name: "search_docs",
+      description:
+        "Search this repository's indexed README.md and CONTRIBUTING.md chunks for setup, architecture, conventions, and contribution docs.",
+      schema: z.object({
+        query: z.string().describe("The documentation search query."),
+      }),
+    }
   );
+
+  const getOpenIssues = tool(
+    async ({ repoId }) => {
+      if (repoId !== repo.id) {
+        return `This tool is scoped to repoId ${repo.id}.`;
+      }
+
+      const issues = await prisma.issue.findMany({
+        where: { repoId, state: "open", classified: true },
+        orderBy: { updatedAt: "desc" },
+        take: 10,
+        select: {
+          title: true,
+          difficulty: true,
+          issueType: true,
+          aiSummary: true,
+        },
+      });
+
+      if (issues.length === 0) {
+        return "No classified open issues are available for this repo yet.";
+      }
+
+      return JSON.stringify({ repoId, issues });
+    },
+    {
+      name: "get_open_issues",
+      description:
+        "Get up to 10 classified open issues for this repository, including title, difficulty, issue type, and AI summary.",
+      schema: z.object({
+        repoId: z.string().describe("The repository id to fetch issues for."),
+      }),
+    }
+  );
+
+  const getRepoStats = tool(
+    async ({ repoId }) => {
+      if (repoId !== repo.id) {
+        return `This tool is scoped to repoId ${repo.id}.`;
+      }
+
+      const stats = await getProjectStats(repoId);
+      if (!stats) {
+        return "No project intelligence stats are available for this repo.";
+      }
+
+      return JSON.stringify(stats);
+    },
+    {
+      name: "get_repo_stats",
+      description:
+        "Get project intelligence stats for this repository: activity score, maintainer score, and classified open issue type breakdown.",
+      schema: z.object({
+        repoId: z.string().describe("The repository id to fetch stats for."),
+      }),
+    }
+  );
+
+  return [searchDocs, getOpenIssues, getRepoStats];
+}
+
+function buildAgentMessages({
+  history,
+  query,
+  repo,
+}: {
+  history?: Array<{ role: "user" | "assistant"; content: string }>;
+  query: string;
+  repo: ProjectAskRepo;
+}) {
+  return [
+    ...(history ?? []).map((message) => ({
+      role: message.role,
+      content: message.content,
+    })),
+    {
+      role: "user" as const,
+      content: `Repo: ${repo.owner}/${repo.name}\nrepoId: ${repo.id}\n\nQuestion: ${query}`,
+    },
+  ];
 }
 
 export async function POST(
@@ -69,7 +186,6 @@ export async function POST(
       id: true,
       owner: true,
       name: true,
-      faissIndexPath: true,
     },
   });
 
@@ -77,42 +193,24 @@ export async function POST(
     return NextResponse.json({ error: "Repo not found" }, { status: 404 });
   }
 
-  if (!repo.faissIndexPath) {
-    return NextResponse.json({ error: "Repo docs index not built yet" }, { status: 400 });
-  }
-
-  const chunksPath = chunksPathForIndex(repo.faissIndexPath);
-  const [index, chunks] = await Promise.all([
-    Promise.resolve(IndexFlatIP.read(repo.faissIndexPath)),
-    readFile(chunksPath, "utf-8").then((content) => JSON.parse(content) as string[]),
-  ]);
-
-  const queryVector = normalizeVector(await embed(parsed.data.query));
-  const result = index.search(queryVector, 4);
-  const sourceChunks = result.labels
-    .filter((label) => label >= 0 && label < chunks.length)
-    .map((label) => chunks[label]);
-
-  const context = sourceChunks
-    .map((chunk, index) => `Chunk ${index + 1}:\n${chunk}`)
-    .join("\n\n---\n\n");
-
-  const completion = await groq.chat.completions.create({
+  const model = new ChatGroq({
     model: GROQ_MODEL,
-    messages: [
-      {
-        role: "system",
-        content:
-          "You answer questions using only the provided repository documentation. If the docs do not contain the answer, say that explicitly.",
-      },
-      {
-        role: "user",
-        content: `Repo: ${repo.owner}/${repo.name}\nQuestion: ${parsed.data.query}\n\nDocs context:\n${context}`,
-      },
-    ],
     temperature: 0.1,
-    max_tokens: 500,
-    stream: true,
+    maxTokens: 500,
+    streaming: true,
+  });
+
+  const agent = createAgent({
+    model,
+    tools: buildProjectTools(repo),
+    systemPrompt:
+      "You help contributors understand this repo. Use search_docs for setup/architecture/convention questions, get_open_issues for questions about available work, get_repo_stats for health/activity questions. Only answer from tool results - if none of the tools return relevant info, say so explicitly. You may call more than one tool if the question needs it.",
+  });
+
+  const agentMessages = buildAgentMessages({
+    history: parsed.data.messages,
+    query: parsed.data.query,
+    repo,
   });
 
   const encoder = new TextEncoder();
@@ -120,12 +218,20 @@ export async function POST(
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        for await (const chunk of completion) {
-          const token = chunk.choices[0]?.delta?.content;
-          if (token) {
-            controller.enqueue(encoder.encode(token));
+        const run = await agent.streamEvents(
+          { messages: agentMessages },
+          { version: "v3", recursionLimit: 8 }
+        );
+
+        for await (const message of run.messages) {
+          for await (const token of message.text) {
+            if (token) {
+              controller.enqueue(encoder.encode(token));
+            }
           }
         }
+
+        await run.output;
         controller.close();
       } catch (error) {
         controller.error(error);

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { buildLocalContributionHeatmap } from "@/lib/contribution-activity";
 import { fetchGitHubContributionStats } from "@/lib/github-contributions";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/utils/supabase/server";
@@ -45,28 +46,17 @@ export async function GET() {
     fetchGitHubContributionStats(dbUser),
   ]);
 
-  const localByDate = new Map<
-    string,
-    { date: string; count: number; complexityTotal: number; snippet: string | null }
-  >();
-
-  for (const contribution of contributions) {
-    const date = contribution.mergedAt.toISOString().slice(0, 10);
-    const existing = localByDate.get(date);
-
-    if (existing) {
-      existing.count += 1;
-      existing.complexityTotal += contribution.complexity ?? 1;
-      continue;
-    }
-
-    localByDate.set(date, {
-      date,
-      count: 1,
-      complexityTotal: contribution.complexity ?? 1,
-      snippet: contribution.aiDescription ?? contribution.prTitle,
-    });
-  }
+  const localHeatmap = buildLocalContributionHeatmap(contributions);
+  const localByDate = new Map(
+    localHeatmap.map((cell) => [
+      cell.date,
+      {
+        count: cell.count,
+        complexityTotal: cell.avgComplexity * cell.count,
+        snippet: cell.snippet,
+      },
+    ])
+  );
 
   if (githubStats) {
     const heatmap = githubStats.contributionDays
@@ -89,15 +79,5 @@ export async function GET() {
     return NextResponse.json({ heatmap, source: "github" });
   }
 
-  const heatmap = Array.from(localByDate.values())
-    .map((cell) => ({
-      date: cell.date,
-      count: cell.count,
-      avgComplexity: cell.complexityTotal / cell.count,
-      snippet: cell.snippet,
-      source: "local",
-    }))
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  return NextResponse.json({ heatmap, source: "local" });
+  return NextResponse.json({ heatmap: localHeatmap, source: "local" });
 }

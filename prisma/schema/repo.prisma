@@ -13,11 +13,31 @@ model Repo {
   maintainerScore Float     @default(0) // how responsive the maintainers are, 0–1
   activityScore   Float     @default(0) // recent commit/PR activity, 0–1
   lastFetchedAt   DateTime?
-  faissIndexPath  String? // where the FAISS index for this repo lives on disk
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   issues Issue[]
+  docs   RepoDoc[]
 
   @@map("repos")
+}
+
+// Repository docs are embedded into pgvector chunks for project Q&A.
+// Prisma can create this table, but reads/writes involving embedding must use
+// prisma.$queryRaw / prisma.$executeRaw because pgvector is Unsupported.
+model RepoDoc {
+  id          String                    @id @default(cuid())
+  repoId      String
+  filePath    String
+  contentHash String
+  chunkIndex  Int
+  chunkText   String                    @db.Text
+  embedding   Unsupported("vector(768)")
+  updatedAt   DateTime                  @default(now()) @updatedAt
+
+  repo Repo @relation(fields: [repoId], references: [id], onDelete: Cascade)
+
+  @@unique([repoId, filePath, chunkIndex])
+  @@index([repoId, filePath])
+  @@map("repo_docs")
 }
