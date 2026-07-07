@@ -40,7 +40,7 @@ type SaveResponse = {
   success: boolean;
   skills?: Skill[];
   embeddingUpdated?: boolean;
-  matchScoringQueued?: boolean;
+  matchScoringTriggered?: boolean;
   error?: unknown;
 };
 
@@ -175,9 +175,9 @@ export default function SkillsPage() {
       if (payload.skills) setDraftSkills(payload.skills);
       setDraftInitialized(true);
       setSaveMessage(
-        payload.embeddingUpdated === false || payload.matchScoringQueued === false
+        payload.embeddingUpdated === false || payload.matchScoringTriggered === false
           ? "Skills saved. Match refresh will catch up after background services are available."
-          : "Skills saved and match refresh queued."
+          : "Skills saved and match refresh started."
       );
       await queryClient.invalidateQueries({ queryKey: ["me-skills"] });
       await queryClient.invalidateQueries({ queryKey: ["feed"] });

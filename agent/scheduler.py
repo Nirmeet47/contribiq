@@ -7,6 +7,7 @@ from typing import Callable
 
 from agent.repo_discovery import discover
 from agent.repo_docs_ingestion import ingest_repo_docs
+from agent.contribution_summary import process_pending_contributions
 from agent.issue_classifier import classify_unclassified_issues
 from agent.issue_fetcher import sync_issues
 from agent.match_scoring import score_matches
@@ -56,6 +57,7 @@ def main() -> None:
     issue_fetch_hours = int_from_env("ISSUE_FETCH_INTERVAL_HOURS", 6)
     issue_classify_hours = int_from_env("ISSUE_CLASSIFY_INTERVAL_HOURS", 1)
     match_scoring_hours = int_from_env("MATCH_SCORING_INTERVAL_HOURS", 6)
+    contribution_minutes = int_from_env("CONTRIBUTION_SUMMARY_INTERVAL_MINUTES", 5)
     run_on_start = os.getenv("AI_SCHEDULER_RUN_ON_START", "true").lower() != "false"
     now = datetime.now()
     jobs = [
@@ -64,6 +66,7 @@ def main() -> None:
         ScheduledJob("issue_fetch", issue_fetch_hours * 3600, lambda: sync_issues(classify_after_fetch=True), now),
         ScheduledJob("issue_classification", issue_classify_hours * 3600, classify_unclassified_issues, now),
         ScheduledJob("match_scoring", match_scoring_hours * 3600, score_matches, now),
+        ScheduledJob("contribution_summary", contribution_minutes * 60, process_pending_contributions, now),
     ]
     if not run_on_start:
         for job in jobs:

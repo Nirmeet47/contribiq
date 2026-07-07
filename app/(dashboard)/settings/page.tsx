@@ -45,6 +45,10 @@ type PipelineStatus = {
       name: string;
       counts: Record<string, number>;
     }>;
+    pythonJobs: Array<{
+      name: string;
+      command: string;
+    }>;
   };
 };
 
@@ -330,7 +334,7 @@ export default function SettingsPage() {
           <div>
             <h2 className="text-lg font-bold text-zinc-100">Pipeline status</h2>
             <p className="mt-1 text-sm leading-6 text-zinc-500">
-              `npm run workers` runs these background jobs: fetch issues, classify issues, score matches, and summarize merged PRs.
+              `npm run ai:worker` runs AI/data jobs. `npm run ai:api` serves project Q&A.
             </p>
           </div>
 
@@ -367,29 +371,22 @@ export default function SettingsPage() {
               <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-5">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-bold text-zinc-100">Worker queues</h3>
+                    <h3 className="text-sm font-bold text-zinc-100">AI workers</h3>
                     <p className="mt-1 text-xs font-medium text-zinc-500">
                       Last checked {new Date(status.generatedAt).toLocaleString()}
                     </p>
                   </div>
                   <span className={`rounded-sm border px-2 py-1 text-xs font-bold ${status.queues.available ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-red-500/30 bg-red-500/10 text-red-300"}`}>
-                    {status.queues.available ? "Redis connected" : "Redis unavailable"}
+                    {status.queues.available ? "Python jobs configured" : "Status unavailable"}
                   </span>
                 </div>
 
                 {status.queues.available ? (
                   <div className="grid gap-3 lg:grid-cols-2">
-                    {status.queues.queues.map((queue) => (
-                      <div key={queue.name} className="rounded-sm border border-zinc-800 bg-zinc-900/40 p-4">
-                        <p className="text-sm font-bold text-zinc-100">{queue.name}</p>
-                        <div className="mt-3 grid grid-cols-5 gap-2">
-                          {Object.entries(queue.counts).map(([key, value]) => (
-                            <div key={key} className="rounded-sm bg-zinc-950 p-2">
-                              <p className="text-sm font-bold text-zinc-100">{value}</p>
-                              <p className="text-[10px] font-medium uppercase text-zinc-600">{key}</p>
-                            </div>
-                          ))}
-                        </div>
+                    {status.queues.pythonJobs.map((job) => (
+                      <div key={job.name} className="rounded-sm border border-zinc-800 bg-zinc-900/40 p-4">
+                        <p className="text-sm font-bold text-zinc-100">{job.name}</p>
+                        <p className="mt-2 font-mono text-xs text-zinc-500">{job.command}</p>
                       </div>
                     ))}
                   </div>

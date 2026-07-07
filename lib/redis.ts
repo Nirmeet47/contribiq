@@ -1,5 +1,4 @@
-// shared redis connection used by bullmq and the cache helpers
-// maxRetriesPerRequest: null and enableReadyCheck: false are both required by bullmq
+// shared redis connection used by cache helpers
 
 import Redis from "ioredis";
 

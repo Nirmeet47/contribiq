@@ -25,34 +25,19 @@ async function getDbUserId() {
 }
 
 async function getQueueStatus() {
-  try {
-    const { contributionQueue } = await import("@/lib/queues");
-
-    const queues = [["Contribution summary", contributionQueue]] as const;
-
-    return {
-      available: true,
-      queues: await Promise.all(
-        queues.map(async ([name, queue]) => ({
-          name,
-          counts: await queue.getJobCounts("waiting", "active", "delayed", "failed", "completed"),
-        }))
-      ),
-      pythonJobs: [
-        { name: "Issue fetch", command: "npm run ai:worker" },
-        { name: "Issue classification + embeddings", command: "npm run ai:worker" },
-        { name: "Match scoring", command: "npm run ai:worker" },
-        { name: "Project RAG / Q&A", command: "npm run ai:api" },
-      ],
-    };
-  } catch (error) {
-    return {
-      available: false,
-      error: String(error),
-      queues: [],
-      pythonJobs: [],
-    };
-  }
+  return {
+    available: true,
+    queues: [],
+    pythonJobs: [
+      { name: "Repo discovery", command: "npm run ai:worker" },
+      { name: "Repo docs ingestion", command: "npm run ai:worker" },
+      { name: "Issue fetch", command: "npm run ai:worker" },
+      { name: "Issue classification + embeddings", command: "npm run ai:worker" },
+      { name: "Match scoring", command: "npm run ai:worker" },
+      { name: "Contribution summary", command: "npm run ai:worker" },
+      { name: "Project RAG / Q&A", command: "npm run ai:api" },
+    ],
+  };
 }
 
 export async function GET() {
