@@ -6,9 +6,6 @@ import { redis } from "./redis";
 
 const connection = redis as unknown as ConnectionOptions;
 
-// runs pgvector cosine similarity and writes the scores to issue_matches
-export const matchScoringQueue = new Queue("match-scoring", { connection });
-
 // triggered by the github webhook when a PR is merged
 export const contributionQueue = new Queue("contribution-summary", {
   connection,

@@ -12,7 +12,9 @@
     "repo:discover": "python -m agent.repo_discovery",
     "repo:docs": "python -m agent.repo_docs_ingestion",
     "issues:fetch": "python -m agent.issue_fetcher",
-    "issues:classify": "python -m agent.issue_classifier"
+    "issues:classify": "python -m agent.issue_classifier",
+    "matches:score": "python -m agent.match_scoring",
+    "ai:api": "uvicorn agent.api:app --host 0.0.0.0 --port 8001"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",

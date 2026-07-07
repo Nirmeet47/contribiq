@@ -9,6 +9,7 @@ from agent.repo_discovery import discover
 from agent.repo_docs_ingestion import ingest_repo_docs
 from agent.issue_classifier import classify_unclassified_issues
 from agent.issue_fetcher import sync_issues
+from agent.match_scoring import score_matches
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,6 +55,7 @@ def main() -> None:
     docs_hours = int_from_env("REPO_DOCS_INGEST_INTERVAL_HOURS", 12)
     issue_fetch_hours = int_from_env("ISSUE_FETCH_INTERVAL_HOURS", 6)
     issue_classify_hours = int_from_env("ISSUE_CLASSIFY_INTERVAL_HOURS", 1)
+    match_scoring_hours = int_from_env("MATCH_SCORING_INTERVAL_HOURS", 6)
     run_on_start = os.getenv("AI_SCHEDULER_RUN_ON_START", "true").lower() != "false"
     now = datetime.now()
     jobs = [
@@ -61,6 +63,7 @@ def main() -> None:
         ScheduledJob("repo_docs_ingestion", docs_hours * 3600, ingest_repo_docs, now),
         ScheduledJob("issue_fetch", issue_fetch_hours * 3600, lambda: sync_issues(classify_after_fetch=True), now),
         ScheduledJob("issue_classification", issue_classify_hours * 3600, classify_unclassified_issues, now),
+        ScheduledJob("match_scoring", match_scoring_hours * 3600, score_matches, now),
     ]
     if not run_on_start:
         for job in jobs:

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { encryptGithubToken } from "@/lib/github-token";
 import { canonicalizeSkills } from "@/lib/skills";
 import type { CanonicalSkillInput } from "@/lib/skills";
+import { scoreMatchesForUser } from "@/lib/ai-api";
 import { createClient } from "@/utils/supabase/server";
 import { invalidateUserFeedCaches } from "@/lib/feed-cache";
 import { prisma } from "@/lib/prisma";
@@ -255,10 +256,9 @@ export async function PATCH(request: Request) {
 
     if (shouldRefreshMatches) {
       try {
-        const { matchScoringQueue } = await import("@/lib/queues");
-        await matchScoringQueue.add("score-matches", { userId: updatedUser.id });
+        await scoreMatchesForUser(updatedUser.id);
       } catch (error) {
-        console.error("[api/me] Failed to enqueue match scoring after onboarding", {
+        console.error("[api/me] Failed to score matches after onboarding", {
           userId: updatedUser.id,
           error,
         });

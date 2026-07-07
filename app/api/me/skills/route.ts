@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
+import { scoreMatchesForUser } from "@/lib/ai-api";
 import { embed } from "@/lib/embeddings";
 import { invalidateUserFeedCaches } from "@/lib/feed-cache";
 import { prisma } from "@/lib/prisma";
@@ -197,11 +198,10 @@ export async function PATCH(request: Request) {
     }
 
     try {
-      const { matchScoringQueue } = await import("@/lib/queues");
-      await matchScoringQueue.add("score-matches", { userId: dbUser.id });
+      await scoreMatchesForUser(dbUser.id);
       matchScoringQueued = true;
     } catch (error) {
-      console.error("[api/me/skills] Failed to enqueue match scoring after skill edit", {
+      console.error("[api/me/skills] Failed to score matches after skill edit", {
         userId: dbUser.id,
         error,
       });
