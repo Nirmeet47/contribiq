@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "workers": "tsx workers/index.ts"
+    "workers": "tsx workers/index.ts",
+    "ai:worker": "python -m agent.scheduler",
+    "repo:discover": "python -m agent.repo_discovery",
+    "repo:docs": "python -m agent.repo_docs_ingestion"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",

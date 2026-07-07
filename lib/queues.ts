@@ -17,9 +17,6 @@ export const issueClassificationQueue = new Queue("issue-classification", {
 // runs pgvector cosine similarity and writes the scores to issue_matches
 export const matchScoringQueue = new Queue("match-scoring", { connection });
 
-// keeps README/CONTRIBUTING chunks fresh in repo_docs
-export const repoDocsIngestQueue = new Queue("repo-docs-ingest", { connection });
-
 // triggered by the github webhook when a PR is merged
 export const contributionQueue = new Queue("contribution-summary", {
   connection,
