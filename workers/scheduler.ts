@@ -1,17 +1,9 @@
 import "dotenv/config";
 
-import { issueFetchQueue, matchScoringQueue } from "@/lib/queues";
+import { matchScoringQueue } from "@/lib/queues";
 
 export async function registerSchedules() {
   await Promise.all([
-    issueFetchQueue.add(
-      "fetch-open-issues",
-      {},
-      {
-        jobId: "fetch-open-issues-cron",
-        repeat: { pattern: "0 */6 * * *" },
-      }
-    ),
     matchScoringQueue.add(
       "score-matches",
       {},
@@ -22,5 +14,5 @@ export async function registerSchedules() {
     ),
   ]);
 
-  console.log("[workers] issue fetch and match scoring schedules registered");
+  console.log("[workers] match scoring schedule registered");
 }

@@ -7,6 +7,8 @@ from typing import Callable
 
 from agent.repo_discovery import discover
 from agent.repo_docs_ingestion import ingest_repo_docs
+from agent.issue_classifier import classify_unclassified_issues
+from agent.issue_fetcher import sync_issues
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,11 +52,15 @@ def run_job(job: ScheduledJob) -> None:
 def main() -> None:
     discovery_hours = int_from_env("REPO_DISCOVERY_INTERVAL_HOURS", 24)
     docs_hours = int_from_env("REPO_DOCS_INGEST_INTERVAL_HOURS", 12)
+    issue_fetch_hours = int_from_env("ISSUE_FETCH_INTERVAL_HOURS", 6)
+    issue_classify_hours = int_from_env("ISSUE_CLASSIFY_INTERVAL_HOURS", 1)
     run_on_start = os.getenv("AI_SCHEDULER_RUN_ON_START", "true").lower() != "false"
     now = datetime.now()
     jobs = [
         ScheduledJob("repo_discovery", discovery_hours * 3600, discover, now),
         ScheduledJob("repo_docs_ingestion", docs_hours * 3600, ingest_repo_docs, now),
+        ScheduledJob("issue_fetch", issue_fetch_hours * 3600, lambda: sync_issues(classify_after_fetch=True), now),
+        ScheduledJob("issue_classification", issue_classify_hours * 3600, classify_unclassified_issues, now),
     ]
     if not run_on_start:
         for job in jobs:

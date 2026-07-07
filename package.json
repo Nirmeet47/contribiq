@@ -10,7 +10,9 @@
     "workers": "tsx workers/index.ts",
     "ai:worker": "python -m agent.scheduler",
     "repo:discover": "python -m agent.repo_discovery",
-    "repo:docs": "python -m agent.repo_docs_ingestion"
+    "repo:docs": "python -m agent.repo_docs_ingestion",
+    "issues:fetch": "python -m agent.issue_fetcher",
+    "issues:classify": "python -m agent.issue_classifier"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",

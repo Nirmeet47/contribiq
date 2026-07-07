@@ -26,16 +26,9 @@ async function getDbUserId() {
 
 async function getQueueStatus() {
   try {
-    const {
-      contributionQueue,
-      issueClassificationQueue,
-      issueFetchQueue,
-      matchScoringQueue,
-    } = await import("@/lib/queues");
+    const { contributionQueue, matchScoringQueue } = await import("@/lib/queues");
 
     const queues = [
-      ["Issue fetch", issueFetchQueue],
-      ["Issue classification", issueClassificationQueue],
       ["Match scoring", matchScoringQueue],
       ["Contribution summary", contributionQueue],
     ] as const;
@@ -48,12 +41,17 @@ async function getQueueStatus() {
           counts: await queue.getJobCounts("waiting", "active", "delayed", "failed", "completed"),
         }))
       ),
+      pythonJobs: [
+        { name: "Issue fetch", command: "npm run ai:worker" },
+        { name: "Issue classification + embeddings", command: "npm run ai:worker" },
+      ],
     };
   } catch (error) {
     return {
       available: false,
       error: String(error),
       queues: [],
+      pythonJobs: [],
     };
   }
 }
