@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Flame, GitCommit, GitPullRequest, Star } from "lucide-react";
+import { Activity, CalendarDays, Flame, GitCommit, GitPullRequest } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type Contribution = {
@@ -54,17 +54,19 @@ async function fetchJson<T>(url: string) {
   return (await response.json()) as T;
 }
 
-function formatReach(value: number) {
-  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
-  return value.toString();
-}
-
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en", {
     month: "short",
     day: "numeric",
     year: "numeric",
   }).format(new Date(value));
+}
+
+function monthLabel(value: Date) {
+  return new Intl.DateTimeFormat("en", {
+    month: "long",
+    year: "numeric",
+  }).format(value);
 }
 
 function dateKey(date: Date) {
@@ -83,6 +85,11 @@ function heatColor(cell: HeatmapCell | undefined) {
   if (cell.count <= 3) return "bg-emerald-800";
   if (cell.count <= 6) return "bg-emerald-600";
   return "bg-emerald-400";
+}
+
+function isSameMonth(value: string, month: Date) {
+  const date = new Date(value);
+  return date.getFullYear() === month.getFullYear() && date.getMonth() === month.getMonth();
 }
 
 function StatCard({
@@ -106,7 +113,15 @@ function StatCard({
   );
 }
 
-export function ContributionsPage() {
+export function ContributionsPage({
+  embedded = false,
+  mode = "full",
+  initialContributions = [],
+}: {
+  embedded?: boolean;
+  mode?: "full" | "summary" | "details";
+  initialContributions?: Contribution[];
+}) {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const [extraContributions, setExtraContributions] = useState<Contribution[]>([]);
   const [paginationCursor, setPaginationCursor] = useState<string | null | undefined>();
@@ -133,10 +148,21 @@ export function ContributionsPage() {
     queryFn: () => fetchJson<MeResponse>("/api/me"),
   });
 
-  const contributions = [
-    ...(contributionsQuery.data?.contributions ?? []),
-    ...extraContributions,
-  ];
+  const apiContributions = contributionsQuery.data?.contributions;
+  const baseContributions =
+    apiContributions && apiContributions.length > 0 ? apiContributions : initialContributions;
+  const contributionsById = new Map(
+    [...baseContributions, ...extraContributions].map((contribution) => [
+      contribution.id,
+      contribution,
+    ])
+  );
+  const contributions = Array.from(contributionsById.values());
+  const currentMonth = useMemo(() => new Date(), []);
+  const currentMonthLabel = monthLabel(currentMonth);
+  const monthlyContributions = contributions
+    .filter((contribution) => isSameMonth(contribution.mergedAt, currentMonth))
+    .sort((a, b) => new Date(b.mergedAt).getTime() - new Date(a.mergedAt).getTime());
   const nextCursor =
     paginationCursor === undefined
       ? contributionsQuery.data?.nextCursor ?? null
@@ -185,7 +211,14 @@ export function ContributionsPage() {
     );
   }, [heatmapByDate]);
 
+  const currentMonthActivityDays = useMemo(() => {
+    return (heatmapQuery.data?.heatmap ?? []).filter(
+      (cell) => cell.count > 0 && isSameMonth(cell.date, currentMonth)
+    ).length;
+  }, [currentMonth, heatmapQuery.data?.heatmap]);
   const username = meQuery.data?.username ?? "developer";
+  const showSummary = mode === "full" || mode === "summary";
+  const showDetails = mode === "full" || mode === "details";
 
   async function copyProfile() {
     await navigator.clipboard.writeText(`https://devcollab.app/${username}`);
@@ -194,17 +227,22 @@ export function ContributionsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8 px-6 py-8">
-        <section className="flex flex-col gap-3 border-b border-zinc-900 pb-6 sm:flex-row sm:items-end sm:justify-between">
+    <div className={embedded ? "space-y-10" : "mx-auto max-w-6xl space-y-10 px-6 py-8"}>
+      {showSummary && (
+        <>
+        <section className="flex flex-col gap-3 border-b border-zinc-900 pb-7 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-emerald-500">
-              Contribution Activity
-            </p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-zinc-100">
-              GitHub impact
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
-              Activity combines your GitHub contribution calendar with PRs captured by ContribIQ.
+            {embedded ? (
+              <h2 className="text-3xl font-bold tracking-tight text-zinc-100">
+                GitHub activity
+              </h2>
+            ) : (
+              <h1 className="text-3xl font-bold tracking-tight text-zinc-100">
+                GitHub activity
+              </h1>
+            )}
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-500">
+              Month-focused GitHub contribution activity and PRs processed by ContribIQ.
             </p>
           </div>
           <span className="w-fit rounded-sm border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs font-bold text-zinc-400">
@@ -221,16 +259,16 @@ export function ContributionsPage() {
           ) : (
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               <StatCard
-                value={statsQuery.data?.totalContributions ?? statsQuery.data?.totalPRs ?? 0}
-                label="Total Activity"
-                detail={`${statsQuery.data?.githubCommits ?? 0} commits`}
-                icon={Activity}
+                value={monthlyContributions.length}
+                label={`${currentMonthLabel} PRs`}
+                detail="merged this month"
+                icon={GitPullRequest}
               />
               <StatCard
-                value={statsQuery.data?.totalPRs ?? 0}
-                label="Pull Requests"
-                detail={`${statsQuery.data?.reposCount ?? 0} repos`}
-                icon={GitPullRequest}
+                value={currentMonthActivityDays}
+                label="Active Days"
+                detail={currentMonthLabel}
+                icon={CalendarDays}
               />
               <StatCard
                 value={`${statsQuery.data?.currentStreak ?? 0} days`}
@@ -239,19 +277,23 @@ export function ContributionsPage() {
                 icon={Flame}
               />
               <StatCard
-                value={formatReach(statsQuery.data?.totalReach ?? 0)}
-                label="Combined Reach"
-                detail="curated repo stars"
-                icon={Star}
+                value={statsQuery.data?.totalContributions ?? statsQuery.data?.totalPRs ?? 0}
+                label="Total Activity"
+                detail={`${statsQuery.data?.githubCommits ?? 0} commits synced`}
+                icon={Activity}
               />
             </div>
           )}
         </section>
+        </>
+      )}
 
+      {showDetails && (
+        <>
         <section className="space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-sm font-bold text-zinc-100">Activity calendar</h2>
+              <h2 className="text-xl font-bold tracking-tight text-zinc-100">Activity calendar</h2>
               <p className="mt-1 text-xs font-medium text-zinc-500">
                 {heatmapQuery.data?.source === "github"
                   ? "Synced from your GitHub contribution calendar."
@@ -278,8 +320,8 @@ export function ContributionsPage() {
               </p>
             </div>
           ) : (
-            <div className="custom-scrollbar overflow-x-auto rounded-sm border border-zinc-800 bg-zinc-950 p-4">
-              <div className="flex min-w-max gap-[3px]">
+            <div className="custom-scrollbar max-w-full overflow-x-auto border-y border-zinc-900 py-4">
+              <div className="mx-auto flex w-max gap-[3px] align-top">
                 {heatmapWeeks.map((week, weekIndex) => (
                   <div key={weekIndex} className="flex flex-col gap-[3px]">
                     {week.map(({ date, cell }) => (
@@ -301,25 +343,34 @@ export function ContributionsPage() {
         </section>
 
         <section className="space-y-4">
-          <h2 className="text-sm font-bold text-zinc-100">Merged Pull Requests</h2>
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight text-zinc-100">
+              PRs merged in {currentMonthLabel}
+            </h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Only pull requests merged during the current month are shown here.
+            </p>
+          </div>
 
-          {contributionsQuery.isLoading ? (
+          {contributionsQuery.isLoading && initialContributions.length === 0 ? (
             <div className="space-y-3">
               {[1, 2, 3].map((item) => (
                 <div key={item} className="h-28 animate-pulse rounded-sm bg-zinc-800" />
               ))}
             </div>
-          ) : contributions.length === 0 ? (
+          ) : monthlyContributions.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-sm border border-zinc-800 bg-zinc-950 p-10 text-center">
               <GitPullRequest className="h-10 w-10 text-zinc-700" />
-              <p className="mt-4 text-sm font-medium text-zinc-500">No merged PRs yet</p>
+              <p className="mt-4 text-sm font-medium text-zinc-500">
+                No PRs merged in {currentMonthLabel}
+              </p>
               <p className="mt-1 text-xs text-zinc-600">
-                Merge your first PR in an open-source repo and it will appear here automatically.
+                Older PRs are kept out of this monthly view so the section stays focused.
               </p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {contributions.map((contribution) => {
+            <div className="overflow-hidden border-y border-zinc-800">
+              {monthlyContributions.map((contribution) => {
                 const stats = [
                   contribution.linesAdded !== null && contribution.linesRemoved !== null
                     ? `+${contribution.linesAdded} / -${contribution.linesRemoved} lines`
@@ -335,52 +386,58 @@ export function ContributionsPage() {
                 return (
                   <article
                     key={contribution.id}
-                    className="space-y-3 rounded-sm border border-zinc-800 bg-zinc-950 p-5 transition-colors hover:border-zinc-700"
+                    className="relative border-b border-zinc-900 py-4 pl-4 transition-colors last:border-b-0 hover:bg-zinc-950/70"
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <p className="text-sm font-bold text-zinc-100">
-                        {contribution.repoOwner}/{contribution.repoName}
-                      </p>
-                      <p className="shrink-0 text-xs font-medium text-zinc-500">
-                        {formatDate(contribution.mergedAt)}
-                      </p>
-                    </div>
+                    <span className="absolute left-0 top-6 h-2 w-2 rounded-full bg-emerald-400" />
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs font-medium">
+                          <span className="font-bold uppercase tracking-wide text-emerald-400">
+                            {formatDate(contribution.mergedAt)}
+                          </span>
+                          <span className="text-zinc-600">PR #{contribution.prNumber}</span>
+                          <span className="rounded-sm border border-purple-500/40 bg-purple-500/10 px-2 py-0.5 font-bold text-purple-300">
+                            Merged
+                          </span>
+                          <span className="min-w-0 truncate text-zinc-500">
+                            {contribution.repoOwner}/{contribution.repoName}
+                          </span>
+                        </div>
 
-                    <h3 className="text-base font-semibold text-zinc-200">
-                      {contribution.prTitle}
-                    </h3>
+                        <h3 className="mt-2 text-base font-semibold leading-6 text-zinc-100">
+                          {contribution.prTitle}
+                        </h3>
 
-                    {contribution.aiDescription && (
-                      <p className="text-sm italic leading-6 text-zinc-400">
-                        {contribution.aiDescription}
-                      </p>
-                    )}
+                        {contribution.aiDescription && (
+                          <p className="mt-2 line-clamp-2 text-sm leading-6 text-zinc-400">
+                            {contribution.aiDescription}
+                          </p>
+                        )}
 
-                    <div className="flex flex-wrap gap-2">
-                      {contribution.skillsDemonstrated.map((skill) => (
-                        <span
-                          key={skill}
-                          className="inline-flex rounded-full border border-emerald-800 bg-emerald-900/40 px-2 py-0.5 text-[11px] font-medium text-emerald-400"
-                        >
-                          {skill}
-                        </span>
-                      ))}
-                    </div>
-
-                    {stats.length > 0 && (
-                      <div className="flex flex-wrap gap-3 text-xs text-zinc-500">
-                        {stats.map((stat) => (
-                          <span key={stat}>{stat}</span>
-                        ))}
+                        {(contribution.skillsDemonstrated.length > 0 || stats.length > 0) && (
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            {contribution.skillsDemonstrated.slice(0, 3).map((skill) => (
+                              <span
+                                key={skill}
+                                className="inline-flex rounded-sm border border-emerald-800 bg-emerald-900/40 px-2 py-0.5 text-[11px] font-medium text-emerald-400"
+                              >
+                                {skill}
+                              </span>
+                            ))}
+                            {stats.map((stat) => (
+                              <span key={stat} className="text-xs text-zinc-500">
+                                {stat}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    )}
 
-                    <div className="flex justify-end">
                       <a
                         href={contribution.prUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-xs font-bold text-emerald-400 hover:text-emerald-300"
+                        className="inline-flex h-9 shrink-0 items-center justify-center rounded-sm border border-zinc-800 px-3 text-xs font-bold text-emerald-400 transition-colors hover:border-emerald-500/40 hover:text-emerald-300"
                       >
                         View PR
                       </a>
@@ -392,24 +449,28 @@ export function ContributionsPage() {
               {isFetchingMore && (
                 <div className="h-20 animate-pulse rounded-sm bg-zinc-800" />
               )}
-              <div ref={sentinelRef} className="h-1" />
             </div>
           )}
+          <div ref={sentinelRef} className="h-1" />
         </section>
 
-        <section className="flex flex-col gap-4 rounded-sm border border-zinc-800 bg-zinc-900/60 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
-            <p className="text-sm text-zinc-400">Your public profile:</p>
-            <p className="text-sm font-mono text-emerald-400">devcollab.app/{username}</p>
-          </div>
-          <button
-            type="button"
-            onClick={copyProfile}
-            className="rounded-sm border border-zinc-700 px-3 py-2 text-xs font-bold text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white"
-          >
-            {copied ? "Copied!" : "Copy"}
-          </button>
-        </section>
+        {!embedded && (
+          <section className="flex flex-col gap-4 rounded-sm border border-zinc-800 bg-zinc-900/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <p className="text-sm text-zinc-400">Your public profile:</p>
+              <p className="text-sm font-mono text-emerald-400">devcollab.app/{username}</p>
+            </div>
+            <button
+              type="button"
+              onClick={copyProfile}
+              className="rounded-sm border border-zinc-700 px-3 py-2 text-xs font-bold text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </section>
+        )}
+        </>
+      )}
     </div>
   );
 }

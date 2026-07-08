@@ -8,11 +8,9 @@ import {
   CheckCircle2,
   Code2,
   Compass,
-  Inbox,
   LayoutDashboard,
   LogOut,
   Settings,
-  Trophy,
   UserRound,
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
@@ -23,13 +21,15 @@ const NAV_ITEMS = [
   { label: "Bookmarks", icon: Bookmark, href: "/bookmarks" },
   { label: "Discover", icon: Compass, href: "/discover" },
   { label: "Skills", icon: BookOpen, href: "/skills" },
-  { label: "Contributions", icon: Trophy, href: "/contributions" },
-  { label: "Profile", icon: UserRound, href: "/profile" },
+  { label: "Profile & Activity", icon: UserRound, href: "/profile" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];
 
 function isActive(pathname: string, href: string) {
   if (href === "/dashboard") return pathname === "/dashboard";
+  if (href === "/profile") {
+    return pathname === "/profile" || pathname.startsWith("/profile/") || pathname === "/contributions";
+  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
