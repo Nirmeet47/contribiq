@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
+import { processContributionWithAi } from "@/lib/contribution-ai";
 import { invalidateContributionStats } from "@/lib/contribution-cache";
 import { invalidateAllFeedCaches } from "@/lib/feed-cache";
-import { contributionQueue } from "@/lib/queues";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
 
@@ -223,8 +223,11 @@ export async function POST(request: Request) {
 
   await invalidateContributionStats(user.id);
 
-  await contributionQueue.add("process-contribution", {
-    contributionId: contribution.id,
+  processContributionWithAi(contribution.id).catch((error) => {
+    console.error("[webhook] Failed to trigger Python contribution processing", {
+      contributionId: contribution.id,
+      error,
+    });
   });
 
   return NextResponse.json({ ok: true });

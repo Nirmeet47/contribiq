@@ -1,18 +1,14 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
-import { embed } from "@/lib/embeddings";
+import { refreshSkillEmbeddingForUser, scoreMatchesForUser } from "@/lib/ai-api";
 import { invalidateUserFeedCaches } from "@/lib/feed-cache";
 import { prisma } from "@/lib/prisma";
 import type { SkillLevel } from "@prisma/client";
-import { canonicalizeSkills, formatSkillEmbeddingText, isLanguageSkill, skillIdentity } from "@/lib/skills";
+import { canonicalizeSkills, isLanguageSkill, skillIdentity } from "@/lib/skills";
 
 export const dynamic = "force-dynamic";
 
 const SKILL_LEVELS = new Set<SkillLevel>(["strong", "moderate", "learning"]);
-
-function toVectorLiteral(values: number[]) {
-  return `[${values.join(",")}]`;
-}
 
 export async function GET() {
   try {
@@ -168,16 +164,10 @@ export async function PATCH(request: Request) {
 
     let embeddingUpdated = false;
     let cacheInvalidated = false;
-    let matchScoringQueued = false;
+    let matchScoringTriggered = false;
 
     try {
-      const vector = toVectorLiteral(await embed(formatSkillEmbeddingText(savedSkills)));
-      await prisma.$executeRaw`
-        INSERT INTO skill_embeddings (skill_profile_id, embedding, updated_at)
-        VALUES (${skillProfileId}, ${vector}::vector, now())
-        ON CONFLICT (skill_profile_id)
-        DO UPDATE SET embedding = EXCLUDED.embedding, updated_at = now()
-      `;
+      await refreshSkillEmbeddingForUser(dbUser.id);
       embeddingUpdated = true;
     } catch (error) {
       console.error("[api/me/skills] Failed to update skill embedding after skill edit", {
@@ -197,11 +187,10 @@ export async function PATCH(request: Request) {
     }
 
     try {
-      const { matchScoringQueue } = await import("@/lib/queues");
-      await matchScoringQueue.add("score-matches", { userId: dbUser.id });
-      matchScoringQueued = true;
+      await scoreMatchesForUser(dbUser.id);
+      matchScoringTriggered = true;
     } catch (error) {
-      console.error("[api/me/skills] Failed to enqueue match scoring after skill edit", {
+      console.error("[api/me/skills] Failed to score matches after skill edit", {
         userId: dbUser.id,
         error,
       });
@@ -212,7 +201,7 @@ export async function PATCH(request: Request) {
       skills: savedSkills,
       embeddingUpdated,
       cacheInvalidated,
-      matchScoringQueued,
+      matchScoringTriggered,
     });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

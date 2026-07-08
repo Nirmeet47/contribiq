@@ -354,7 +354,7 @@ function buildGitHubHeatmap(
 
 export const getPublicProfile = cache(
   async (username: string): Promise<PublicProfilePayload | null> => {
-    const cacheKey = `profile:${username.toLowerCase()}:v3`;
+    const cacheKey = `profile:${username.toLowerCase()}:v4`;
     const cached = await getCachedJson<PublicProfilePayload>(cacheKey, "profile");
     if (cached) return cached;
 
@@ -441,19 +441,13 @@ export const getPublicProfile = cache(
 
     const profileLogin =
       githubOverview?.profile?.login ?? githubProfile?.login ?? user.username;
-    const isExternalRepo = (owner: string) =>
-      owner.toLowerCase() !== profileLogin.toLowerCase();
-    const externalContributions = allContributions.filter((contribution) =>
-      isExternalRepo(contribution.repoOwner)
-    );
     const localContributionByKey = new Map(
-      externalContributions.map((contribution) => [
+      allContributions.map((contribution) => [
         `${contribution.repoOwner}/${contribution.repoName}#${contribution.prNumber}`.toLowerCase(),
         contribution,
       ])
     );
     const githubTopContributions = (githubOverview?.pullRequests ?? [])
-      .filter((pr) => isExternalRepo(pr.repoOwner))
       .map((pr) => {
         const local = localContributionByKey.get(
           `${pr.repoOwner}/${pr.repoName}#${pr.prNumber}`.toLowerCase()
@@ -475,21 +469,19 @@ export const getPublicProfile = cache(
           filesChanged: local?.filesChanged ?? null,
         };
       });
-    const localTopContributions = [...externalContributions].sort((a, b) => {
+    const localTopContributions = [...allContributions].sort((a, b) => {
       const complexityDiff = (b.complexity ?? 0) - (a.complexity ?? 0);
       if (complexityDiff !== 0) return complexityDiff;
       return b.mergedAt.getTime() - a.mergedAt.getTime();
     });
     const topContributions =
       githubTopContributions.length > 0
-        ? githubTopContributions.slice(0, 5)
-        : localTopContributions.slice(0, 5);
-    const localRepoPairs = externalContributions.map(
+        ? githubTopContributions.slice(0, 20)
+        : localTopContributions.slice(0, 20);
+    const localRepoPairs = allContributions.map(
       (item) => `${item.repoOwner}/${item.repoName}`
     );
-    const githubRepos = (githubOverview?.repositories ?? []).filter((repo) =>
-      isExternalRepo(repo.owner)
-    );
+    const githubRepos = githubOverview?.repositories ?? [];
     const repoPairs = Array.from(
       new Set([...githubRepos.map((repo) => repo.fullName), ...localRepoPairs])
     );
@@ -525,7 +517,7 @@ export const getPublicProfile = cache(
       heatmap,
       contributedRepos,
       stats: {
-        totalPRs: Math.max(externalContributions.length, githubTopContributions.length),
+        totalPRs: Math.max(allContributions.length, githubTopContributions.length),
         totalRepos: contributedRepos.length,
         totalReach,
         totalCommits: Math.max(
