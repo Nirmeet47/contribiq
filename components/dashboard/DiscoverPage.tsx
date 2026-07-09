@@ -1,10 +1,11 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Clock, GitPullRequest, Search, Star } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
+import { DashboardFilterSelect, DashboardMultiSelect } from "@/components/dashboard/DashboardFilterSelect";
 import { ProjectCard, type ProjectRepo } from "@/components/dashboard/ProjectsCatalogPage";
 
 type Difficulty = "beginner" | "intermediate" | "advanced";
@@ -34,12 +35,6 @@ type Issue = {
 };
 
 type SearchResponse = { issues: Issue[]; repos: ProjectRepo[] };
-type ByTechResponse = {
-  tag: string;
-  tags: Array<{ tag: string; count: number }>;
-  issues: Issue[];
-  repos: ProjectRepo[];
-};
 type TrendingResponse = { issues: Array<{ bookmarkCount: number; issue: Issue }> };
 type ReposResponse = { repos: ProjectRepo[]; recentRepos: ProjectRepo[]; filters: { languages: string[] } };
 
@@ -53,7 +48,7 @@ async function fetchJson<T>(url: string) {
   return (await response.json()) as T;
 }
 
-function useDebouncedValue(value: string, delayMs: number) {
+function useDebouncedValue<T>(value: T, delayMs: number) {
   const [debounced, setDebounced] = useState(value);
 
   useEffect(() => {
@@ -144,22 +139,17 @@ function RepoMiniCard({ repo }: { repo: ProjectRepo }) {
 
 export function DiscoverPage() {
   const [search, setSearch] = useState("");
-  const [selectedTag, setSelectedTag] = useState("TypeScript");
-  const [language, setLanguage] = useState("");
+  const [languages, setLanguages] = useState<string[]>([]);
   const [difficulty, setDifficulty] = useState("");
   const [minResponsiveness, setMinResponsiveness] = useState("");
   const [sort, setSort] = useState<RepoSort>("activityScore");
   const debouncedSearch = useDebouncedValue(search, 300);
+  const debouncedLanguages = useDebouncedValue(languages, 250);
 
   const searchQuery = useQuery({
     queryKey: ["discover-search", debouncedSearch],
     queryFn: () => fetchJson<SearchResponse>(`/api/discover/search?q=${encodeURIComponent(debouncedSearch)}`),
     enabled: debouncedSearch.trim().length > 0,
-  });
-
-  const byTechQuery = useQuery({
-    queryKey: ["discover-by-tech", selectedTag],
-    queryFn: () => fetchJson<ByTechResponse>(`/api/discover/by-tech/${encodeURIComponent(selectedTag)}`),
   });
 
   const trendingQuery = useQuery({
@@ -168,168 +158,138 @@ export function DiscoverPage() {
   });
 
   const reposQuery = useQuery({
-    queryKey: ["repos-directory", { language, difficulty, minResponsiveness, sort }],
+    queryKey: ["repos-directory", { languages: debouncedLanguages, difficulty, minResponsiveness, sort }],
     queryFn: () => {
       const params = new URLSearchParams({ sort });
-      if (language) params.set("language", language);
+      for (const language of debouncedLanguages) params.append("language", language);
       if (difficulty) params.set("difficulty", difficulty);
       if (minResponsiveness) params.set("minResponsiveness", minResponsiveness);
       return fetchJson<ReposResponse>(`/api/repos?${params.toString()}`);
     },
+    placeholderData: keepPreviousData,
   });
 
-  const tagCloud = byTechQuery.data?.tags ?? [];
   const searchIssues = searchQuery.data?.issues ?? [];
   const searchRepos = searchQuery.data?.repos ?? [];
   const directoryRepos = reposQuery.data?.repos ?? [];
-  const recentRepos = reposQuery.data?.recentRepos ?? [];
+  const trendingIssues = trendingQuery.data?.issues ?? [];
 
   return (
-    <section className="mx-auto max-w-7xl space-y-8 px-6 py-8">
-      <header className="border-b border-zinc-900 pb-6">
-        <p className="text-xs font-bold uppercase tracking-widest text-emerald-500">Discover</p>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight text-zinc-100">Find your next contribution</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
-          Search open issues, browse by technology, and scan contributor-friendly repositories.
-        </p>
-      </header>
+    <section className="mx-auto max-w-7xl space-y-6 px-6 py-8">
+      <div className="flex flex-col gap-4 border-b border-zinc-900 pb-6 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest text-emerald-500">Discover</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-zinc-100">Find your next contribution</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
+            Search issues and filter contributor-friendly repositories without digging through the page.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:w-72">
+          <Card className="flex min-h-16 flex-col items-center justify-center p-3 text-center">
+            <p className="text-xl font-bold text-zinc-100">{reposQuery.data?.repos.length ?? 0}</p>
+            <p className="text-[11px] font-medium text-zinc-500">Visible repos</p>
+          </Card>
+          <Card className="flex min-h-16 flex-col items-center justify-center p-3 text-center">
+            <p className="text-xl font-bold text-zinc-100">{reposQuery.data?.filters.languages.length ?? 0}</p>
+            <p className="text-[11px] font-medium text-zinc-500">Languages</p>
+          </Card>
+        </div>
+      </div>
 
-      <Card className="p-4">
-        <label className="relative block">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-600" />
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search issues, summaries, or repos"
-            className="h-11 w-full rounded-sm border border-zinc-800 bg-zinc-900 pl-9 pr-3 text-sm font-medium text-zinc-200 outline-none transition-colors placeholder:text-zinc-600 hover:border-zinc-700 focus:border-emerald-500/60"
-          />
-        </label>
+      <Card className="border-zinc-800/80 bg-zinc-950/80 p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="relative block min-w-[280px] flex-[1_1_360px]">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-600" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search issues, summaries, or repos"
+              className="h-9 w-full rounded-sm border border-zinc-800 bg-zinc-900 pl-9 pr-3 text-sm font-medium text-zinc-200 outline-none transition-colors placeholder:text-zinc-600 hover:border-zinc-700 focus:border-emerald-500/60"
+            />
+          </label>
 
-        {debouncedSearch && (
-          <div className="mt-5 grid gap-5 lg:grid-cols-2">
-            <div className="space-y-3">
-              <h2 className="text-sm font-bold text-zinc-100">Matching issues</h2>
-              {searchIssues.length > 0 ? searchIssues.map((issue) => <IssueCard key={issue.id} issue={issue} />) : (
-                <p className="rounded-sm border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-500">No issues found.</p>
-              )}
-            </div>
-            <div className="space-y-3">
-              <h2 className="text-sm font-bold text-zinc-100">Matching repos</h2>
-              {searchRepos.length > 0 ? searchRepos.map((repo) => <RepoMiniCard key={repo.id} repo={repo} />) : (
-                <p className="rounded-sm border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-500">No repos found.</p>
-              )}
-            </div>
+          <div className="flex flex-[0_1_auto] flex-wrap items-center gap-3">
+            <DashboardMultiSelect
+              value={languages}
+              onChange={setLanguages}
+              options={reposQuery.data?.filters.languages ?? []}
+              placeholder="All languages"
+              searchPlaceholder="Search language"
+              minWidthClassName="w-52"
+            />
+            <DashboardFilterSelect
+              value={difficulty}
+              onChange={setDifficulty}
+              options={[
+                { value: "", label: "All difficulty" },
+                { value: "beginner", label: "Beginner" },
+                { value: "intermediate", label: "Intermediate" },
+                { value: "advanced", label: "Advanced" },
+              ]}
+              minWidthClassName="w-40"
+            />
+            <DashboardFilterSelect
+              value={minResponsiveness}
+              onChange={setMinResponsiveness}
+              options={[
+                { value: "", label: "Any responsiveness" },
+                { value: "0.4", label: "40%+" },
+                { value: "0.7", label: "70%+" },
+              ]}
+              minWidthClassName="w-48"
+            />
+            <DashboardFilterSelect<RepoSort>
+              value={sort}
+              onChange={(value) => setSort((value || "activityScore") as RepoSort)}
+              options={[
+                { value: "activityScore", label: "Activity" },
+                { value: "maintainerScore", label: "Responsiveness" },
+                { value: "stars", label: "Stars" },
+              ]}
+              minWidthClassName="w-40"
+            />
           </div>
-        )}
+        </div>
       </Card>
 
-      <section className="space-y-5">
-        <Card className="overflow-hidden border-zinc-800/80 bg-zinc-950/80 p-0">
-          <div className="flex items-center justify-between gap-4 border-b border-zinc-900 px-5 py-4">
-            <div>
-              <h2 className="text-lg font-bold text-zinc-100">Browse by technology</h2>
-              <p className="mt-1 text-xs font-medium text-zinc-600">
-                Pick a skill to see matching contributor-friendly repos.
-              </p>
-            </div>
-            <span className="hidden shrink-0 rounded-sm border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs font-bold text-zinc-400 sm:inline">
-              {tagCloud.length} skills
-            </span>
+      {debouncedSearch && (
+        <section className="grid gap-5 lg:grid-cols-2">
+          <div className="space-y-3">
+            <h2 className="text-lg font-bold text-zinc-100">Matching issues</h2>
+            {searchIssues.length > 0 ? searchIssues.map((issue) => <IssueCard key={issue.id} issue={issue} />) : (
+              <p className="rounded-sm border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-500">No issues found.</p>
+            )}
           </div>
-          <div className="relative">
-            <div className="pointer-events-none absolute bottom-0 left-0 top-0 z-10 w-10 bg-gradient-to-r from-zinc-950 to-transparent" />
-            <div className="pointer-events-none absolute bottom-0 right-0 top-0 z-10 w-10 bg-gradient-to-l from-zinc-950 to-transparent" />
-            <div className="skill-slider-scrollbar overflow-x-auto px-5 pb-3 pt-4">
-              <div className="flex w-max min-w-full snap-x snap-mandatory gap-2.5">
-                {tagCloud.map((item) => (
-                  <button
-                    key={item.tag}
-                    type="button"
-                    onClick={() => setSelectedTag(item.tag)}
-                    className={`group flex shrink-0 snap-start items-center gap-2 rounded-sm border px-3.5 py-2 text-xs font-bold transition-all ${
-                      selectedTag.toLowerCase() === item.tag.toLowerCase()
-                        ? "border-emerald-400/60 bg-emerald-400 text-zinc-950 shadow-[0_0_0_3px_rgba(52,211,153,0.12)]"
-                        : "border-zinc-800 bg-zinc-900/80 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-100"
-                    }`}
-                  >
-                    <span>{item.tag}</span>
-                    <span
-                      className={`rounded-sm px-1.5 py-0.5 text-[10px] ${
-                        selectedTag.toLowerCase() === item.tag.toLowerCase()
-                          ? "bg-zinc-950/15 text-zinc-950"
-                          : "bg-zinc-950 text-zinc-600 group-hover:text-zinc-400"
-                      }`}
-                    >
-                      {item.count}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
+          <div className="space-y-3">
+            <h2 className="text-lg font-bold text-zinc-100">Matching repos</h2>
+            {searchRepos.length > 0 ? searchRepos.map((repo) => <RepoMiniCard key={repo.id} repo={repo} />) : (
+              <p className="rounded-sm border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-500">No repos found.</p>
+            )}
           </div>
-        </Card>
-
-        <div className="space-y-3">
-          <h2 className="text-lg font-bold text-zinc-100">{selectedTag} repos</h2>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {(byTechQuery.data?.repos ?? []).map((repo) => (
-              <ProjectCard key={repo.id} repo={repo} />
-            ))}
-          </div>
-          {byTechQuery.data?.repos?.length === 0 && (
-            <p className="rounded-sm border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-500">
-              No repos found for this skill yet.
-            </p>
-          )}
-        </div>
-      </section>
+        </section>
+      )}
 
       <section className="space-y-4">
-        <h2 className="text-lg font-bold text-zinc-100">Trending this week</h2>
-        <div className="grid gap-4 lg:grid-cols-3">
-          {(trendingQuery.data?.issues ?? []).map((item) => (
-            <IssueCard key={item.issue.id} issue={item.issue} badge={`${item.bookmarkCount} saves`} />
-          ))}
-        </div>
-      </section>
-
-      <section className="space-y-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <h2 className="text-lg font-bold text-zinc-100">Repo directory</h2>
-          <div className="flex flex-wrap gap-2">
-            <select value={language} onChange={(event) => setLanguage(event.target.value)} className="h-9 rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-xs font-bold text-zinc-300">
-              <option value="">All languages</option>
-              {(reposQuery.data?.filters.languages ?? []).map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-            <select value={difficulty} onChange={(event) => setDifficulty(event.target.value)} className="h-9 rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-xs font-bold text-zinc-300">
-              <option value="">All difficulty</option>
-              <option value="beginner">Beginner</option>
-              <option value="intermediate">Intermediate</option>
-              <option value="advanced">Advanced</option>
-            </select>
-            <select value={minResponsiveness} onChange={(event) => setMinResponsiveness(event.target.value)} className="h-9 rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-xs font-bold text-zinc-300">
-              <option value="">Any responsiveness</option>
-              <option value="0.4">40%+</option>
-              <option value="0.7">70%+</option>
-            </select>
-            <select value={sort} onChange={(event) => setSort(event.target.value as RepoSort)} className="h-9 rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-xs font-bold text-zinc-300">
-              <option value="activityScore">Activity</option>
-              <option value="maintainerScore">Responsiveness</option>
-              <option value="stars">Stars</option>
-            </select>
-          </div>
-        </div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {directoryRepos.slice(0, 9).map((repo) => <ProjectCard key={repo.id} repo={repo} />)}
         </div>
+        {!reposQuery.isLoading && directoryRepos.length === 0 && (
+          <Card className="p-8 text-center text-sm font-medium text-zinc-500">
+            No repositories match these filters.
+          </Card>
+        )}
       </section>
 
-      <section className="space-y-4">
-        <h2 className="text-lg font-bold text-zinc-100">Recently added repos</h2>
-        <div className="grid gap-4 md:grid-cols-3">
-          {recentRepos.map((repo) => <RepoMiniCard key={repo.id} repo={repo} />)}
-        </div>
-      </section>
+      {trendingIssues.length > 0 && (
+        <section className="space-y-4">
+          <h2 className="text-lg font-bold text-zinc-100">Trending issues this week</h2>
+          <div className="grid gap-4 lg:grid-cols-3">
+            {trendingIssues.map((item) => (
+              <IssueCard key={item.issue.id} issue={item.issue} badge={`${item.bookmarkCount} saves`} />
+            ))}
+          </div>
+        </section>
+      )}
     </section>
   );
 }

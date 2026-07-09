@@ -75,6 +75,19 @@ async function deleteIssueCaches(issueId: string, repoId: string) {
   }
 }
 
+async function getCatalogLanguages() {
+  const languages = await prisma.repo.findMany({
+    where: { language: { not: null } },
+    distinct: ["language"],
+    orderBy: { language: "asc" },
+    select: { language: true },
+  });
+
+  return languages
+    .map((repo) => repo.language)
+    .filter((value): value is string => Boolean(value));
+}
+
 async function getDbUser() {
   const supabase = await createClient();
   const {
@@ -188,9 +201,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const catalogLanguages = await getCatalogLanguages();
+
   if ((dbUser.interests?.length ?? 0) === 0 || dbUser.timeCommitment <= 0) {
     return NextResponse.json({
       matches: [],
+      filters: { languages: catalogLanguages },
       reason: "profile_incomplete",
     });
   }
@@ -293,6 +309,9 @@ export async function GET(request: Request) {
   const visibleMatches = await validateStaleIssues(matches);
 
   const payload = {
+    filters: {
+      languages: catalogLanguages,
+    },
     matches: visibleMatches.map((match) => ({
       id: match.id,
       score: match.score,

@@ -8,7 +8,7 @@ const PAGE_SIZE = 9;
 const projectQuerySchema = z.object({
   q: z.string().trim().max(80).optional(),
   category: z.string().trim().max(40).optional(),
-  language: z.string().trim().max(40).optional(),
+  languages: z.array(z.string().trim().min(1).max(40)).max(50).default([]),
   sort: z.enum(["activity", "stars", "issues", "health", "name"]).default("activity"),
   page: z.coerce.number().int().min(1).default(1),
 });
@@ -19,10 +19,16 @@ function healthScore(repo: { maintainerScore: number; activityScore: number }) {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
+  const languageParams = [
+    ...searchParams.getAll("language"),
+    ...(searchParams.get("languages")?.split(",") ?? []),
+  ]
+    .map((language) => language.trim())
+    .filter(Boolean);
   const parsed = projectQuerySchema.safeParse({
     q: searchParams.get("q") || undefined,
     category: searchParams.get("category") || undefined,
-    language: searchParams.get("language") || undefined,
+    languages: [...new Set(languageParams)],
     sort: searchParams.get("sort") || undefined,
     page: searchParams.get("page") || undefined,
   });
@@ -31,7 +37,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: z.treeifyError(parsed.error) }, { status: 400 });
   }
 
-  const { q, category, language, sort, page } = parsed.data;
+  const { q, category, languages: selectedLanguages, sort, page } = parsed.data;
   const where = {
     ...(q
       ? {
@@ -44,7 +50,9 @@ export async function GET(request: Request) {
         }
       : {}),
     ...(category ? { categories: { has: category } } : {}),
-    ...(language ? { language: { equals: language, mode: "insensitive" as const } } : {}),
+    ...(selectedLanguages.length > 0
+      ? { language: { in: selectedLanguages, mode: "insensitive" as const } }
+      : {}),
   };
 
   const repos = await prisma.repo.findMany({

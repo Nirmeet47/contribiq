@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 const querySchema = z.object({
-  language: z.string().trim().max(40).optional(),
+  languages: z.array(z.string().trim().min(1).max(40)).max(50).default([]),
   difficulty: z.enum(["beginner", "intermediate", "advanced"]).optional(),
   minResponsiveness: z.coerce.number().min(0).max(1).optional(),
   sort: z.enum(["stars", "activityScore", "maintainerScore"]).default("activityScore"),
@@ -18,8 +18,14 @@ function healthScore(repo: { maintainerScore: number; activityScore: number }) {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
+  const languageParams = [
+    ...searchParams.getAll("language"),
+    ...(searchParams.get("languages")?.split(",") ?? []),
+  ]
+    .map((language) => language.trim())
+    .filter(Boolean);
   const parsed = querySchema.safeParse({
-    language: searchParams.get("language") || undefined,
+    languages: [...new Set(languageParams)],
     difficulty: searchParams.get("difficulty") || undefined,
     minResponsiveness: searchParams.get("minResponsiveness") || undefined,
     sort: searchParams.get("sort") || undefined,
@@ -29,14 +35,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: z.treeifyError(parsed.error) }, { status: 400 });
   }
 
-  const { language, difficulty, minResponsiveness, sort } = parsed.data;
-  const cacheKey = `repos:v1:${language ?? "all"}:${difficulty ?? "all"}:${minResponsiveness ?? "all"}:${sort}`;
+  const { languages: selectedLanguages, difficulty, minResponsiveness, sort } = parsed.data;
+  const languageCacheKey = selectedLanguages.length > 0 ? selectedLanguages.sort().join(",") : "all";
+  const cacheKey = `repos:v2:${languageCacheKey}:${difficulty ?? "all"}:${minResponsiveness ?? "all"}:${sort}`;
   const cached = await getCachedJson<unknown>(cacheKey, "repos");
   if (cached) return NextResponse.json(cached);
 
   const repos = await prisma.repo.findMany({
     where: {
-      ...(language ? { language: { equals: language, mode: "insensitive" as const } } : {}),
+      ...(selectedLanguages.length > 0
+        ? { language: { in: selectedLanguages, mode: "insensitive" as const } }
+        : {}),
       ...(minResponsiveness !== undefined
         ? { maintainerScore: { gte: minResponsiveness } }
         : {}),

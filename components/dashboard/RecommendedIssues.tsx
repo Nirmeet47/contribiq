@@ -1,18 +1,19 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bookmark,
   BookmarkCheck,
   CheckCircle2,
-  ChevronDown,
   Clock,
   GitPullRequest,
+  RotateCw,
   ThumbsDown,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { isLanguageSkill } from "@/lib/skills";
+import { useEffect, useState } from "react";
+import { DashboardFilterSelect, DashboardMultiSelect } from "@/components/dashboard/DashboardFilterSelect";
+import { isLanguageSkill, skillIdentity } from "@/lib/skills";
 
 type Difficulty = "beginner" | "intermediate" | "advanced";
 type IssueType = "bug" | "feature" | "docs" | "refactor";
@@ -26,6 +27,9 @@ type UserSkill = {
 type FeedMatch = {
   id: string;
   score: number;
+  skillSim: number;
+  interestSim: number;
+  diffScore: number;
   issue: {
     id: string;
     title: string;
@@ -48,6 +52,9 @@ type FeedMatch = {
 };
 
 type FeedResponse = {
+  filters?: {
+    languages: string[];
+  };
   matches: FeedMatch[];
   reason?: "profile_incomplete";
 };
@@ -61,6 +68,17 @@ const ISSUE_TYPES: IssueType[] = ["bug", "feature", "docs", "refactor"];
 
 function titleCase(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(id);
+  }, [delayMs, value]);
+
+  return debounced;
 }
 
 function scoreTone(score: number) {
@@ -168,125 +186,104 @@ async function fetchSkills() {
   return (await response.json()) as SkillsResponse;
 }
 
-function FilterSelect<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: T | "";
-  options: Array<{ value: T | ""; label: string }>;
-  onChange: (value: T | "") => void;
-}) {
-  const selectedOption = options.find((option) => option.value === value) ?? options[0];
+function buildMatchReasons(match: FeedMatch, userSkills: UserSkill[]) {
+  const userSkillIds = new Set(userSkills.map((skill) => skillIdentity(skill.name)));
+  const userLanguageIds = new Set(
+    userSkills.filter((skill) => isLanguageSkill(skill.name)).map((skill) => skillIdentity(skill.name))
+  );
+  const matchedSkills = match.issue.requiredSkills
+    .filter((skill) => userSkillIds.has(skillIdentity(skill)))
+    .slice(0, 3);
+  const reasons: string[] = [];
 
-  function selectOption(nextValue: T | "", event: React.MouseEvent<HTMLButtonElement>) {
-    onChange(nextValue);
-    event.currentTarget.closest("details")?.removeAttribute("open");
+  if (matchedSkills.length > 0) {
+    reasons.push(`Matched skills: ${matchedSkills.join(", ")}`);
+  } else if (match.skillSim >= 0.65) {
+    reasons.push("Strong skill-profile similarity");
   }
 
-  return (
-    <div className="relative grid gap-1.5 text-[11px] font-bold uppercase tracking-widest text-zinc-600">
-      <span>{label}</span>
-      <details className="group">
-        <summary className="flex h-9 min-w-40 cursor-pointer list-none items-center justify-between gap-3 rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-xs font-bold normal-case tracking-normal text-zinc-300 outline-none transition-colors hover:border-zinc-700 [&::-webkit-details-marker]:hidden">
-          <span className="truncate">{selectedOption?.label}</span>
-          <ChevronDown className="h-4 w-4 text-zinc-500 transition-transform group-open:rotate-180" />
-        </summary>
-        <div className="absolute left-0 z-20 mt-2 w-full min-w-48 rounded-sm border border-zinc-800 bg-zinc-950 p-2 shadow-xl shadow-black/40">
-          {options.map((option) => (
-            <button
-              key={option.value || "all"}
-              type="button"
-              onClick={(event) => selectOption(option.value, event)}
-              className={`flex w-full items-center rounded-sm px-2.5 py-2 text-left text-xs font-bold normal-case tracking-normal transition-colors ${option.value === value ? "bg-emerald-500/10 text-emerald-300" : "text-zinc-400 hover:bg-zinc-900 hover:text-white"}`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      </details>
-    </div>
-  );
+  if (match.issue.repo.language && userLanguageIds.has(skillIdentity(match.issue.repo.language))) {
+    reasons.push(`${match.issue.repo.language} repo matches your languages`);
+  }
+
+  if (match.interestSim > 0) {
+    reasons.push("Aligned with your contribution interests");
+  }
+
+  if (match.diffScore >= 0.75 && match.issue.difficulty) {
+    reasons.push(`${titleCase(match.issue.difficulty)} difficulty fits your profile`);
+  }
+
+  if (match.issue.repo.maintainerScore >= 0.7) {
+    reasons.push("Maintainers usually respond quickly");
+  }
+
+  return reasons.slice(0, 3);
 }
 
-function LanguageMultiSelect({
-  options,
-  selectedLanguages,
-  onChange,
+function FeedRecoveryState({
+  title,
+  detail,
+  onRefresh,
+  onClearFilters,
+  showClearFilters,
+  isRefreshing,
 }: {
-  options: string[];
-  selectedLanguages: string[];
-  onChange: (languages: string[]) => void;
+  title: string;
+  detail: string;
+  onRefresh: () => void;
+  onClearFilters: () => void;
+  showClearFilters: boolean;
+  isRefreshing: boolean;
 }) {
-  const selectedSet = useMemo(() => new Set(selectedLanguages), [selectedLanguages]);
-  const buttonLabel =
-    selectedLanguages.length === 0
-      ? "All languages"
-      : selectedLanguages.length === 1
-        ? selectedLanguages[0]
-        : `${selectedLanguages.length} languages`;
-
-  function toggleLanguage(language: string) {
-    if (selectedSet.has(language)) {
-      onChange(selectedLanguages.filter((item) => item !== language));
-      return;
-    }
-
-    onChange([...selectedLanguages, language]);
-  }
-
   return (
-    <div className="relative grid gap-1.5 text-[11px] font-bold uppercase tracking-widest text-zinc-600">
-      <span>Languages</span>
-      <details className="group">
-        <summary className="flex h-9 min-w-44 cursor-pointer list-none items-center justify-between gap-3 rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-xs font-bold normal-case tracking-normal text-zinc-300 outline-none transition-colors hover:border-zinc-700 [&::-webkit-details-marker]:hidden">
-          <span className="truncate">{buttonLabel}</span>
-          <ChevronDown className="h-4 w-4 text-zinc-500 transition-transform group-open:rotate-180" />
-        </summary>
-        <div className="absolute right-0 z-20 mt-2 w-64 rounded-sm border border-zinc-800 bg-zinc-950 p-2 shadow-xl shadow-black/40">
+    <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-8 text-center">
+      <h3 className="text-base font-bold text-zinc-100">{title}</h3>
+      <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-zinc-500">{detail}</p>
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+        {showClearFilters && (
           <button
             type="button"
-            onClick={() => onChange([])}
-            className={`mb-1 flex w-full items-center justify-between rounded-sm px-2.5 py-2 text-left text-xs font-bold normal-case tracking-normal transition-colors ${selectedLanguages.length === 0 ? "bg-emerald-500/10 text-emerald-300" : "text-zinc-400 hover:bg-zinc-900 hover:text-white"}`}
+            onClick={onClearFilters}
+            className="inline-flex h-9 items-center justify-center rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-xs font-bold text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white"
           >
-            All languages
+            Broaden filters
           </button>
-          <div className="max-h-56 overflow-y-auto">
-            {options.length === 0 ? (
-              <p className="px-2.5 py-2 text-xs font-medium normal-case tracking-normal text-zinc-500">
-                No language skills yet.
-              </p>
-            ) : (
-              options.map((language) => (
-                <label
-                  key={language}
-                  className="flex cursor-pointer items-center gap-2 rounded-sm px-2.5 py-2 text-xs font-medium normal-case tracking-normal text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-white"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedSet.has(language)}
-                    onChange={() => toggleLanguage(language)}
-                    className="h-3.5 w-3.5 rounded-sm border-zinc-700 accent-emerald-500"
-                  />
-                  <span className="truncate">{language}</span>
-                </label>
-              ))
-            )}
-          </div>
-        </div>
-      </details>
+        )}
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={isRefreshing}
+          className="inline-flex h-9 items-center justify-center gap-2 rounded-sm border border-emerald-500/30 bg-emerald-500/10 px-3 text-xs font-bold text-emerald-300 transition-colors hover:border-emerald-400/50 hover:bg-emerald-500/15 disabled:opacity-50"
+        >
+          <RotateCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+          Refresh matches
+        </button>
+        <Link
+          href="/skills"
+          className="inline-flex h-9 items-center justify-center rounded-sm bg-emerald-500 px-3 text-xs font-bold text-zinc-950 transition-colors hover:bg-emerald-400"
+        >
+          Update skills
+        </Link>
+        <Link
+          href="/settings"
+          className="inline-flex h-9 items-center justify-center rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-xs font-bold text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white"
+        >
+          Preferences
+        </Link>
+      </div>
     </div>
   );
 }
 
 function RecommendedIssueCard({
   match,
+  userSkills,
   onDismiss,
   onRestore,
 }: {
   match: FeedMatch;
+  userSkills: UserSkill[];
   onDismiss: (issueId: string) => void;
   onRestore: (issueId: string) => void;
 }) {
@@ -296,6 +293,7 @@ function RecommendedIssueCard({
   const percent = Math.round(match.score * 100);
   const logoUrl = `https://github.com/${match.issue.repo.owner}.png`;
   const responsiveness = responsivenessTone(match.issue.repo.maintainerScore);
+  const matchReasons = buildMatchReasons(match, userSkills);
 
   const bookmarkMutation = useMutation({
     mutationFn: async (nextBookmarked: boolean) => {
@@ -416,6 +414,24 @@ function RecommendedIssueCard({
         </span>
       </div>
 
+      {matchReasons.length > 0 && (
+        <div className="mb-5 rounded-sm border border-zinc-900 bg-zinc-900/40 p-3">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-emerald-400">
+            Why this match
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {matchReasons.map((reason) => (
+              <span
+                key={reason}
+                className="rounded-sm border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-200"
+              >
+                {reason}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between gap-3 border-t border-zinc-900 pt-4">
         <div className="flex min-w-0 flex-wrap gap-2">
           {match.issue.requiredSkills.slice(0, 3).map((skill) => (
@@ -483,27 +499,28 @@ export function RecommendedIssues() {
   const [languages, setLanguages] = useState<string[]>([]);
   const [sort, setSort] = useState<SortOrder>("desc");
   const [dismissedIssueIds, setDismissedIssueIds] = useState<Set<string>>(() => new Set());
+  const debouncedLanguages = useDebouncedValue(languages, 300);
 
   const skillsQuery = useQuery({
     queryKey: ["me-skills"],
     queryFn: fetchSkills,
   });
 
-  const languageOptions = useMemo(
-    () =>
-      (skillsQuery.data?.skills ?? [])
-        .map((skill) => skill.name)
-        .filter(isLanguageSkill)
-        .sort((a, b) => a.localeCompare(b)),
-    [skillsQuery.data?.skills]
-  );
-
   const feedQuery = useQuery({
-    queryKey: ["feed", { difficulty, issueType, languages, sort }],
-    queryFn: () => fetchFeed({ difficulty, issueType, languages, sort }),
+    queryKey: ["feed", { difficulty, issueType, languages: debouncedLanguages, sort }],
+    queryFn: () => fetchFeed({ difficulty, issueType, languages: debouncedLanguages, sort }),
+    placeholderData: keepPreviousData,
   });
+  const languageOptions = feedQuery.data?.filters?.languages ?? [];
   const visibleMatches =
     feedQuery.data?.matches.filter((match) => !dismissedIssueIds.has(match.issue.id)) ?? [];
+  const hasActiveFilters = Boolean(difficulty || issueType || languages.length > 0);
+
+  function clearFilters() {
+    setDifficulty(undefined);
+    setIssueType(undefined);
+    setLanguages([]);
+  }
 
   return (
     <section className="space-y-6">
@@ -518,7 +535,7 @@ export function RecommendedIssues() {
       <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-4">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div className="flex flex-wrap gap-3">
-            <FilterSelect
+            <DashboardFilterSelect
               label="Difficulty"
               value={difficulty ?? ""}
               onChange={(value) => setDifficulty(value || undefined)}
@@ -528,7 +545,7 @@ export function RecommendedIssues() {
               ]}
             />
 
-            <FilterSelect
+            <DashboardFilterSelect
               label="Type"
               value={issueType ?? ""}
               onChange={(value) => setIssueType(value || undefined)}
@@ -538,14 +555,17 @@ export function RecommendedIssues() {
               ]}
             />
 
-            <LanguageMultiSelect
+            <DashboardMultiSelect
+              label="Languages"
               options={languageOptions}
-              selectedLanguages={languages}
+              value={languages}
               onChange={setLanguages}
+              placeholder="All languages"
+              searchPlaceholder="Search language"
             />
           </div>
 
-          <FilterSelect
+          <DashboardFilterSelect
             label="Sort"
             value={sort}
             onChange={(value) => setSort((value || "desc") as SortOrder)}
@@ -566,23 +586,42 @@ export function RecommendedIssues() {
       )}
 
       {feedQuery.isError && (
-        <div className="rounded-sm border border-red-500/30 bg-red-500/10 p-4 text-sm font-medium text-red-300">
-          Feed could not be loaded.
-        </div>
+        <FeedRecoveryState
+          title="Feed could not be loaded"
+          detail="The matcher or cache may be temporarily unavailable. Refresh the feed, or adjust your skills and preferences if this keeps happening."
+          onRefresh={() => feedQuery.refetch()}
+          onClearFilters={clearFilters}
+          showClearFilters={hasActiveFilters}
+          isRefreshing={feedQuery.isFetching}
+        />
       )}
 
       {feedQuery.data?.matches.length === 0 && (
-        <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-8 text-center text-sm font-medium text-zinc-500">
-          {feedQuery.data.reason === "profile_incomplete"
-            ? "Complete your skills, interests, and time commitment so matches can be personalized."
-            : "No strong matches yet. Update your skills or wait for more issues to be classified and rescored."}
-        </div>
+        <FeedRecoveryState
+          title={feedQuery.data.reason === "profile_incomplete" ? "Finish your matching profile" : "No strong matches yet"}
+          detail={
+            feedQuery.data.reason === "profile_incomplete"
+              ? "Complete your skills, interests, and time commitment so ContribIQ can rank issues for you."
+              : hasActiveFilters
+                ? "Your current filters may be too narrow. Broaden them or refresh after updating your skills."
+                : "Update your skills, check preferences, or refresh after more issues are classified and rescored."
+          }
+          onRefresh={() => feedQuery.refetch()}
+          onClearFilters={clearFilters}
+          showClearFilters={hasActiveFilters}
+          isRefreshing={feedQuery.isFetching}
+        />
       )}
 
       {feedQuery.data && feedQuery.data.matches.length > 0 && visibleMatches.length === 0 && (
-        <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-8 text-center text-sm font-medium text-zinc-500">
-          No visible recommendations left in this view.
-        </div>
+        <FeedRecoveryState
+          title="No visible recommendations left"
+          detail="You have dismissed or started every issue in this view. Refresh the feed or broaden the filters to bring more options back."
+          onRefresh={() => feedQuery.refetch()}
+          onClearFilters={clearFilters}
+          showClearFilters={hasActiveFilters}
+          isRefreshing={feedQuery.isFetching}
+        />
       )}
 
       {visibleMatches.length > 0 && (
@@ -594,6 +633,7 @@ export function RecommendedIssues() {
             <RecommendedIssueCard
               key={match.id}
               match={match}
+              userSkills={skillsQuery.data?.skills ?? []}
               onDismiss={(issueId) =>
                 setDismissedIssueIds((current) => new Set(current).add(issueId))
               }
