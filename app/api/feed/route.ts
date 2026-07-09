@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 const feedQuerySchema = z.object({
   difficulty: z.enum(["beginner", "intermediate", "advanced"]).optional(),
   issueType: z.enum(["bug", "feature", "docs", "refactor"]).optional(),
+  languages: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
   sort: z.enum(["desc", "asc"]).default("desc"),
 });
 
@@ -195,9 +196,16 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
+  const languageParams = [
+    ...searchParams.getAll("language"),
+    ...(searchParams.get("languages")?.split(",") ?? []),
+  ]
+    .map((language) => language.trim())
+    .filter(Boolean);
   const parsed = feedQuerySchema.safeParse({
     difficulty: searchParams.get("difficulty") || undefined,
     issueType: searchParams.get("issueType") || undefined,
+    languages: [...new Set(languageParams)],
     sort: searchParams.get("sort") || undefined,
   });
 
@@ -205,8 +213,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: z.treeifyError(parsed.error) }, { status: 400 });
   }
 
-  const { difficulty, issueType, sort } = parsed.data;
-  const cacheKey = `feed:v3:${dbUser.id}:${difficulty ?? "all"}:${issueType ?? "all"}:${sort}:${appConfig.feedMinScore}:${appConfig.feedSkillOnlyMinScore}`;
+  const { difficulty, issueType, languages, sort } = parsed.data;
+  const languageCacheKey = languages.length > 0 ? languages.sort().join(",") : "all";
+  const cacheKey = `feed:v4:${dbUser.id}:${difficulty ?? "all"}:${issueType ?? "all"}:${languageCacheKey}:${sort}:${appConfig.feedMinScore}:${appConfig.feedSkillOnlyMinScore}`;
   const cached = await getCachedPayload(cacheKey);
 
   if (cached) {
@@ -225,6 +234,13 @@ export async function GET(request: Request) {
         state: "open",
         ...(difficulty ? { difficulty } : {}),
         ...(issueType ? { issueType } : {}),
+        ...(languages.length > 0
+          ? {
+              repo: {
+                language: { in: languages, mode: "insensitive" as const },
+              },
+            }
+          : {}),
         feedback: {
           none: { userId: dbUser.id },
         },

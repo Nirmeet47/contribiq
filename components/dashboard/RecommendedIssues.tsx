@@ -5,16 +5,23 @@ import {
   Bookmark,
   BookmarkCheck,
   CheckCircle2,
+  ChevronDown,
   Clock,
   GitPullRequest,
   ThumbsDown,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { isLanguageSkill } from "@/lib/skills";
 
 type Difficulty = "beginner" | "intermediate" | "advanced";
 type IssueType = "bug" | "feature" | "docs" | "refactor";
 type SortOrder = "desc" | "asc";
+
+type UserSkill = {
+  name: string;
+  level: "strong" | "moderate" | "learning";
+};
 
 type FeedMatch = {
   id: string;
@@ -43,6 +50,10 @@ type FeedMatch = {
 type FeedResponse = {
   matches: FeedMatch[];
   reason?: "profile_incomplete";
+};
+
+type SkillsResponse = {
+  skills: UserSkill[];
 };
 
 const DIFFICULTIES: Difficulty[] = ["beginner", "intermediate", "advanced"];
@@ -133,19 +144,141 @@ function RecommendedIssueSkeleton() {
 async function fetchFeed({
   difficulty,
   issueType,
+  languages,
   sort,
 }: {
   difficulty?: Difficulty;
   issueType?: IssueType;
+  languages: string[];
   sort: SortOrder;
 }) {
   const params = new URLSearchParams({ sort });
   if (difficulty) params.set("difficulty", difficulty);
   if (issueType) params.set("issueType", issueType);
+  for (const language of languages) params.append("language", language);
 
   const response = await fetch(`/api/feed?${params.toString()}`);
   if (!response.ok) throw new Error("Failed to load feed");
   return (await response.json()) as FeedResponse;
+}
+
+async function fetchSkills() {
+  const response = await fetch("/api/me/skills");
+  if (!response.ok) throw new Error("Failed to load skills");
+  return (await response.json()) as SkillsResponse;
+}
+
+function FilterSelect<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T | "";
+  options: Array<{ value: T | ""; label: string }>;
+  onChange: (value: T | "") => void;
+}) {
+  const selectedOption = options.find((option) => option.value === value) ?? options[0];
+
+  function selectOption(nextValue: T | "", event: React.MouseEvent<HTMLButtonElement>) {
+    onChange(nextValue);
+    event.currentTarget.closest("details")?.removeAttribute("open");
+  }
+
+  return (
+    <div className="relative grid gap-1.5 text-[11px] font-bold uppercase tracking-widest text-zinc-600">
+      <span>{label}</span>
+      <details className="group">
+        <summary className="flex h-9 min-w-40 cursor-pointer list-none items-center justify-between gap-3 rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-xs font-bold normal-case tracking-normal text-zinc-300 outline-none transition-colors hover:border-zinc-700 [&::-webkit-details-marker]:hidden">
+          <span className="truncate">{selectedOption?.label}</span>
+          <ChevronDown className="h-4 w-4 text-zinc-500 transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="absolute left-0 z-20 mt-2 w-full min-w-48 rounded-sm border border-zinc-800 bg-zinc-950 p-2 shadow-xl shadow-black/40">
+          {options.map((option) => (
+            <button
+              key={option.value || "all"}
+              type="button"
+              onClick={(event) => selectOption(option.value, event)}
+              className={`flex w-full items-center rounded-sm px-2.5 py-2 text-left text-xs font-bold normal-case tracking-normal transition-colors ${option.value === value ? "bg-emerald-500/10 text-emerald-300" : "text-zinc-400 hover:bg-zinc-900 hover:text-white"}`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function LanguageMultiSelect({
+  options,
+  selectedLanguages,
+  onChange,
+}: {
+  options: string[];
+  selectedLanguages: string[];
+  onChange: (languages: string[]) => void;
+}) {
+  const selectedSet = useMemo(() => new Set(selectedLanguages), [selectedLanguages]);
+  const buttonLabel =
+    selectedLanguages.length === 0
+      ? "All languages"
+      : selectedLanguages.length === 1
+        ? selectedLanguages[0]
+        : `${selectedLanguages.length} languages`;
+
+  function toggleLanguage(language: string) {
+    if (selectedSet.has(language)) {
+      onChange(selectedLanguages.filter((item) => item !== language));
+      return;
+    }
+
+    onChange([...selectedLanguages, language]);
+  }
+
+  return (
+    <div className="relative grid gap-1.5 text-[11px] font-bold uppercase tracking-widest text-zinc-600">
+      <span>Languages</span>
+      <details className="group">
+        <summary className="flex h-9 min-w-44 cursor-pointer list-none items-center justify-between gap-3 rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-xs font-bold normal-case tracking-normal text-zinc-300 outline-none transition-colors hover:border-zinc-700 [&::-webkit-details-marker]:hidden">
+          <span className="truncate">{buttonLabel}</span>
+          <ChevronDown className="h-4 w-4 text-zinc-500 transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="absolute right-0 z-20 mt-2 w-64 rounded-sm border border-zinc-800 bg-zinc-950 p-2 shadow-xl shadow-black/40">
+          <button
+            type="button"
+            onClick={() => onChange([])}
+            className={`mb-1 flex w-full items-center justify-between rounded-sm px-2.5 py-2 text-left text-xs font-bold normal-case tracking-normal transition-colors ${selectedLanguages.length === 0 ? "bg-emerald-500/10 text-emerald-300" : "text-zinc-400 hover:bg-zinc-900 hover:text-white"}`}
+          >
+            All languages
+          </button>
+          <div className="max-h-56 overflow-y-auto">
+            {options.length === 0 ? (
+              <p className="px-2.5 py-2 text-xs font-medium normal-case tracking-normal text-zinc-500">
+                No language skills yet.
+              </p>
+            ) : (
+              options.map((language) => (
+                <label
+                  key={language}
+                  className="flex cursor-pointer items-center gap-2 rounded-sm px-2.5 py-2 text-xs font-medium normal-case tracking-normal text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-white"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedSet.has(language)}
+                    onChange={() => toggleLanguage(language)}
+                    className="h-3.5 w-3.5 rounded-sm border-zinc-700 accent-emerald-500"
+                  />
+                  <span className="truncate">{language}</span>
+                </label>
+              ))
+            )}
+          </div>
+        </div>
+      </details>
+    </div>
+  );
 }
 
 function RecommendedIssueCard({
@@ -347,12 +480,27 @@ function RecommendedIssueCard({
 export function RecommendedIssues() {
   const [difficulty, setDifficulty] = useState<Difficulty | undefined>();
   const [issueType, setIssueType] = useState<IssueType | undefined>();
+  const [languages, setLanguages] = useState<string[]>([]);
   const [sort, setSort] = useState<SortOrder>("desc");
   const [dismissedIssueIds, setDismissedIssueIds] = useState<Set<string>>(() => new Set());
 
+  const skillsQuery = useQuery({
+    queryKey: ["me-skills"],
+    queryFn: fetchSkills,
+  });
+
+  const languageOptions = useMemo(
+    () =>
+      (skillsQuery.data?.skills ?? [])
+        .map((skill) => skill.name)
+        .filter(isLanguageSkill)
+        .sort((a, b) => a.localeCompare(b)),
+    [skillsQuery.data?.skills]
+  );
+
   const feedQuery = useQuery({
-    queryKey: ["feed", { difficulty, issueType, sort }],
-    queryFn: () => fetchFeed({ difficulty, issueType, sort }),
+    queryKey: ["feed", { difficulty, issueType, languages, sort }],
+    queryFn: () => fetchFeed({ difficulty, issueType, languages, sort }),
   });
   const visibleMatches =
     feedQuery.data?.matches.filter((match) => !dismissedIssueIds.has(match.issue.id)) ?? [];
@@ -368,56 +516,44 @@ export function RecommendedIssues() {
       </div>
 
       <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-4">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setDifficulty(undefined)}
-              className={`rounded-sm border px-3 py-1.5 text-xs font-bold transition-colors ${!difficulty ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white"}`}
-            >
-              All difficulty
-            </button>
-            {DIFFICULTIES.map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setDifficulty(value)}
-                className={`rounded-sm border px-3 py-1.5 text-xs font-bold transition-colors ${difficulty === value ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white"}`}
-              >
-                {titleCase(value)}
-              </button>
-            ))}
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div className="flex flex-wrap gap-3">
+            <FilterSelect
+              label="Difficulty"
+              value={difficulty ?? ""}
+              onChange={(value) => setDifficulty(value || undefined)}
+              options={[
+                { value: "", label: "All difficulty" },
+                ...DIFFICULTIES.map((value) => ({ value, label: titleCase(value) })),
+              ]}
+            />
+
+            <FilterSelect
+              label="Type"
+              value={issueType ?? ""}
+              onChange={(value) => setIssueType(value || undefined)}
+              options={[
+                { value: "", label: "All types" },
+                ...ISSUE_TYPES.map((value) => ({ value, label: titleCase(value) })),
+              ]}
+            />
+
+            <LanguageMultiSelect
+              options={languageOptions}
+              selectedLanguages={languages}
+              onChange={setLanguages}
+            />
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setIssueType(undefined)}
-              className={`rounded-sm border px-3 py-1.5 text-xs font-bold transition-colors ${!issueType ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white"}`}
-            >
-              All types
-            </button>
-            {ISSUE_TYPES.map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setIssueType(value)}
-                className={`rounded-sm border px-3 py-1.5 text-xs font-bold transition-colors ${issueType === value ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white"}`}
-              >
-                {titleCase(value)}
-              </button>
-            ))}
-          </div>
-
-          <select
+          <FilterSelect
+            label="Sort"
             value={sort}
-            onChange={(event) => setSort(event.target.value as SortOrder)}
-            className="h-9 rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-xs font-bold text-zinc-300 outline-none transition-colors hover:border-zinc-700"
-            aria-label="Sort feed"
-          >
-            <option value="desc">Best match</option>
-            <option value="asc">Lowest match</option>
-          </select>
+            onChange={(value) => setSort((value || "desc") as SortOrder)}
+            options={[
+              { value: "desc", label: "Best match" },
+              { value: "asc", label: "Lowest match" },
+            ]}
+          />
         </div>
       </div>
 
