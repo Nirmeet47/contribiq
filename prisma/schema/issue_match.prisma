@@ -20,5 +20,7 @@ model IssueMatch {
   issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
   @@unique([userId, issueId])
+  @@index([userId, score])
+  @@index([issueId])
   @@map("issue_matches")
 }

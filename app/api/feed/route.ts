@@ -150,17 +150,17 @@ async function validateStaleIssues<T extends FeedMatch>(matches: T[]) {
 
   const closedIssueIds = new Set<string>();
 
-  for (const match of staleMatches) {
+  await Promise.all(staleMatches.map(async (match) => {
     const latest = await fetchGitHubIssue(
       match.issue.repo.owner,
       match.issue.repo.name,
       match.issue.githubUrl
     );
 
-    if (!latest?.state) continue;
+    if (!latest?.state) return;
 
     const latestState = latest.state === "closed" ? "closed" : "open";
-    if (latestState === match.issue.state) continue;
+    if (latestState === match.issue.state) return;
 
     await prisma.issue.update({
       where: { id: match.issue.id },
@@ -185,7 +185,7 @@ async function validateStaleIssues<T extends FeedMatch>(matches: T[]) {
     if (latestState === "closed") {
       closedIssueIds.add(match.issue.id);
     }
-  }
+  }));
 
   if (closedIssueIds.size > 0) {
     await invalidateAllFeedCaches("lazy-issue-state-validation");
@@ -199,16 +199,6 @@ export async function GET(request: Request) {
 
   if (!dbUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const catalogLanguages = await getCatalogLanguages();
-
-  if ((dbUser.interests?.length ?? 0) === 0 || dbUser.timeCommitment <= 0) {
-    return NextResponse.json({
-      matches: [],
-      filters: { languages: catalogLanguages },
-      reason: "profile_incomplete",
-    });
   }
 
   const { searchParams } = new URL(request.url);
@@ -236,6 +226,16 @@ export async function GET(request: Request) {
 
   if (cached) {
     return NextResponse.json(cached);
+  }
+
+  const catalogLanguages = await getCatalogLanguages();
+
+  if ((dbUser.interests?.length ?? 0) === 0 || dbUser.timeCommitment <= 0) {
+    return NextResponse.json({
+      matches: [],
+      filters: { languages: catalogLanguages },
+      reason: "profile_incomplete",
+    });
   }
 
   const matches = await prisma.issueMatch.findMany({
