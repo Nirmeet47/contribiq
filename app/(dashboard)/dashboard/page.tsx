@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { DashboardHome } from "@/components/dashboard/DashboardHome";
 import { DashboardLoading } from "@/components/dashboard/DashboardLoading";
 import { DashboardOnboarding } from "@/components/dashboard/DashboardOnboarding";
@@ -49,7 +48,6 @@ async function readJson<T>(response: Response): Promise<T> {
 
 export default function DashboardPage() {
   const supabase = useMemo(() => createClient(), []);
-  const [user, setUser] = useState<SupabaseUser | null>(null);
   const [dbUser, setDbUser] = useState<DbUser | null>(null);
   const [viewState, setViewState] = useState<ViewState>("loading");
   const [currentStep, setCurrentStep] = useState("fetching");
@@ -89,8 +87,6 @@ export default function DashboardPage() {
         window.location.href = "/login";
         return;
       }
-      setUser(data.user);
-
       try {
         const response = await fetch("/api/me");
         if (response.status === 401) {
@@ -201,11 +197,6 @@ export default function DashboardPage() {
     setSseRetryToken((value) => value + 1);
   }
 
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    window.location.href = "/login";
-  }
-
   async function handleSaveSkills() {
     setSaving(true);
     try {
@@ -300,7 +291,5 @@ export default function DashboardPage() {
     );
   }
 
-  const name = dbUser?.name || user?.user_metadata?.full_name || "Developer";
-
-  return <DashboardHome name={name} onLogout={handleLogout} />;
+  return <DashboardHome />;
 }

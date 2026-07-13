@@ -65,9 +65,74 @@ type SkillsResponse = {
 
 const DIFFICULTIES: Difficulty[] = ["beginner", "intermediate", "advanced"];
 const ISSUE_TYPES: IssueType[] = ["bug", "feature", "docs", "refactor"];
+const TECH_LOGOS: Record<string, { src: string; invert?: boolean }> = {
+  javascript: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/javascript/javascript-original.svg",
+  },
+  typescript: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/typescript/typescript-original.svg",
+  },
+  react: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/react/react-original.svg",
+  },
+  "next.js": {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/nextjs/nextjs-original.svg",
+    invert: true,
+  },
+  nextjs: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/nextjs/nextjs-original.svg",
+    invert: true,
+  },
+  node: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/nodejs/nodejs-original.svg",
+  },
+  "node.js": {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/nodejs/nodejs-original.svg",
+  },
+  python: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/python/python-original.svg",
+  },
+  go: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/go/go-original.svg",
+  },
+  rust: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/rust/rust-original.svg",
+    invert: true,
+  },
+  java: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/java/java-original.svg",
+  },
+  vue: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/vuejs/vuejs-original.svg",
+  },
+  svelte: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/svelte/svelte-original.svg",
+  },
+};
 
 function titleCase(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function techLogoFor(name: string) {
+  return TECH_LOGOS[name.trim().toLowerCase()];
+}
+
+function TechChip({ name }: { name: string }) {
+  const logo = techLogoFor(name);
+
+  return (
+    <span className="inline-flex h-9 items-center justify-center gap-2 rounded-sm bg-zinc-900 px-3 text-xs font-medium text-zinc-300">
+      {logo && (
+        <span
+          aria-hidden="true"
+          className={`h-4 w-4 shrink-0 bg-contain bg-center bg-no-repeat ${logo.invert ? "invert" : ""}`}
+          style={{ backgroundImage: `url(${logo.src})` }}
+        />
+      )}
+      <span className="leading-none">{name}</span>
+    </span>
+  );
 }
 
 function useDebouncedValue<T>(value: T, delayMs: number) {
@@ -432,16 +497,14 @@ function RecommendedIssueCard({
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-3 border-t border-zinc-900 pt-4">
-        <div className="flex min-w-0 flex-wrap gap-2">
+      <div className="flex flex-col gap-4 border-t border-zinc-900 pt-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           {match.issue.requiredSkills.slice(0, 3).map((skill) => (
-            <span key={skill} className="rounded-sm bg-zinc-900 px-2 py-1 text-[11px] font-medium text-zinc-500">
-              {skill}
-            </span>
+            <TechChip key={skill} name={skill} />
           ))}
           <Link
             href={`/projects/${match.issue.repo.id}`}
-            className="inline-flex items-center justify-center rounded-sm bg-emerald-500 px-4 py-2 text-sm font-bold text-zinc-950 shadow-sm shadow-emerald-950/40 transition-colors hover:bg-emerald-400"
+            className="inline-flex h-9 items-center justify-center rounded-sm bg-emerald-500 px-4 text-sm font-bold text-zinc-950 shadow-sm shadow-emerald-950/40 transition-colors hover:bg-emerald-400"
           >
             View Project
           </Link>
@@ -523,11 +586,10 @@ export function RecommendedIssues() {
   }
 
   return (
-    <section className="space-y-6">
-      <div className="border-b border-zinc-900 pb-6">
-        <p className="text-xs font-bold uppercase tracking-widest text-emerald-400">Personalized feed</p>
-        <h2 className="mt-2 text-3xl font-bold tracking-tight text-zinc-100">Matched repos</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
+    <section className="space-y-3 pb-8">
+      <div>
+        <h2 className="text-3xl font-bold tracking-tight text-white">Matched repos</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
           Issues ranked from your skills, interests, and contribution history.
         </p>
       </div>

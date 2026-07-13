@@ -1,33 +1,105 @@
 "use client";
 
-import { LogOut } from "lucide-react";
-import { DashboardRightPanel } from "./DashboardRightPanel";
+import { useQuery } from "@tanstack/react-query";
+import { ExternalLink } from "lucide-react";
+import Link from "next/link";
+import { DashboardProfileInsights } from "./DashboardProfileInsights";
 import { RecommendedIssues } from "./RecommendedIssues";
 
-export function DashboardHome({
-  name,
-  onLogout,
-}: {
-  name: string;
-  onLogout: () => void;
-}) {
+type DashboardUser = {
+  username?: string | null;
+  name?: string | null;
+  avatarUrl?: string | null;
+  createdAt?: string | Date | null;
+  interests?: string[] | null;
+  timeCommitment?: number | null;
+  skillProfile?: {
+    skills?: unknown[];
+  } | null;
+};
+
+async function fetchMe() {
+  const response = await fetch("/api/me");
+  if (!response.ok) throw new Error("Failed to load profile");
+  return (await response.json()) as DashboardUser;
+}
+
+function formatDate(value: string | Date | null | undefined) {
+  if (!value) return "recently";
+
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function DashboardProfileHeader() {
+  const meQuery = useQuery({ queryKey: ["me"], queryFn: fetchMe });
+  const user = meQuery.data;
+  const displayName = user?.name || user?.username || "Developer";
+  const username = user?.username || "developer";
+  const skillCount = user?.skillProfile?.skills?.length ?? 0;
+  const interestCount = user?.interests?.length ?? 0;
+  const weeklyHours = user?.timeCommitment ? `${user.timeCommitment}h/week` : "Not set";
+  const stats = [
+    { label: "Skills", value: skillCount.toLocaleString() },
+    { label: "Interests", value: interestCount.toLocaleString() },
+    { label: "Availability", value: weeklyHours },
+  ];
+
   return (
-    <section className="px-6 py-8 sm:px-8 lg:px-10">
-      <div className="mb-10 flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium text-zinc-500">Welcome back</p>
-          <h1 className="mt-1 text-3xl font-bold tracking-tight text-zinc-50">{name}</h1>
+    <section className="overflow-hidden rounded-sm border border-zinc-800 bg-zinc-950 p-6 shadow-sm">
+      <div className="grid gap-6 lg:grid-cols-[1fr_auto] lg:items-center">
+        <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center">
+          <div
+            className="h-16 w-16 shrink-0 rounded-lg border border-emerald-300/20 bg-zinc-950 bg-cover bg-center"
+            style={{ backgroundImage: user?.avatarUrl ? `url(${user.avatarUrl})` : undefined }}
+          />
+          <div className="min-w-0">
+            <span className="inline-flex rounded-sm bg-emerald-500/10 px-2 py-0.5 text-xs font-bold text-emerald-400">
+              @{username}
+            </span>
+            <h1 className="mt-2 truncate text-2xl font-bold tracking-tight text-white sm:text-3xl">{displayName}</h1>
+            <div className="mt-1 text-sm font-medium text-zinc-400">
+              Joined <span className="text-zinc-200">{formatDate(user?.createdAt)}</span>
+            </div>
+          </div>
         </div>
-        <button onClick={onLogout} className="flex items-center gap-2 rounded-sm border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800 md:hidden">
-          <LogOut className="h-4 w-4" /> Sign Out
-        </button>
+
+        <Link
+          href={`/${username}`}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-sm bg-emerald-500 px-4 text-sm font-bold text-zinc-950 transition-colors hover:bg-emerald-400"
+        >
+          Public view
+          <ExternalLink className="h-4 w-4" />
+        </Link>
       </div>
 
-      <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="min-w-0">
-          <RecommendedIssues />
+      <div className="mt-6 grid gap-3 md:grid-cols-3">
+        {stats.map((stat) => (
+          <div key={stat.label} className="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3">
+            <p className="text-xs font-bold text-zinc-500">{stat.label}</p>
+            <p className="mt-1 text-xl font-bold leading-none text-zinc-100">{stat.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {meQuery.isLoading && (
+        <div className="mt-5 h-1 overflow-hidden rounded-sm bg-zinc-900">
+          <div className="h-full w-1/3 animate-pulse rounded-sm bg-emerald-500/50" />
         </div>
-        <DashboardRightPanel />
+      )}
+    </section>
+  );
+}
+
+export function DashboardHome() {
+  return (
+    <section className="mx-auto w-full max-w-7xl px-6 py-8 sm:px-8 lg:px-12">
+      <div className="space-y-10">
+        <DashboardProfileHeader />
+        <RecommendedIssues />
+        <DashboardProfileInsights />
       </div>
     </section>
   );
