@@ -44,7 +44,7 @@ function getAiApiBaseUrl() {
 
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ repoId: string }> }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
   const userId = await getDbUserId();
   if (!userId) {
@@ -56,17 +56,17 @@ export async function POST(
     return NextResponse.json({ error: z.treeifyError(parsed.error) }, { status: 400 });
   }
 
-  const { repoId } = await params;
+  const { projectId } = await params;
   const repo = await prisma.repo.findUnique({
-    where: { id: repoId },
+    where: { id: projectId },
     select: { id: true },
   });
 
   if (!repo) {
-    return NextResponse.json({ error: "Repo not found" }, { status: 404 });
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  const response = await fetch(`${getAiApiBaseUrl()}/projects/${repoId}/ask`, {
+  const response = await fetch(`${getAiApiBaseUrl()}/projects/${projectId}/ask`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(parsed.data),

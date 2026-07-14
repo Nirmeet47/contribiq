@@ -6,7 +6,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { DashboardFilterSelect, DashboardMultiSelect } from "@/components/dashboard/DashboardFilterSelect";
-import { ProjectCard, type ProjectSummary } from "@/components/dashboard/ProjectsCatalogPage";
+import { ProjectCard } from "@/components/dashboard/ProjectsCatalogPage";
+import type { ProjectSummary } from "@/lib/project-serializer";
 
 type Difficulty = "beginner" | "intermediate" | "advanced";
 type IssueType = "bug" | "feature" | "docs" | "refactor";

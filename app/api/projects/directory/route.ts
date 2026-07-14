@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCachedJson, setCachedJson } from "@/lib/cache";
 import { prisma } from "@/lib/prisma";
+import { serializeProjectSummary } from "@/lib/project-serializer";
 import { getRepoLanguageCatalog } from "@/lib/repo-language-cache";
 
 export const dynamic = "force-dynamic";
@@ -12,10 +13,6 @@ const querySchema = z.object({
   minResponsiveness: z.coerce.number().min(0).max(1).optional(),
   sort: z.enum(["stars", "activityScore", "maintainerScore"]).default("activityScore"),
 });
-
-function healthScore(repo: { maintainerScore: number; activityScore: number }) {
-  return repo.maintainerScore * 0.55 + repo.activityScore * 0.45;
-}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -125,14 +122,10 @@ export async function GET(request: Request) {
       0
     );
 
-    return {
-      ...repo,
-      openIssueCount: repo._count.issues,
+    return serializeProjectSummary(repo, {
       classifiedIssueCount,
       difficultyCounts,
-      healthScore: healthScore(repo),
-      _count: undefined,
-    };
+    });
   });
 
   const payload = {
@@ -140,14 +133,12 @@ export async function GET(request: Request) {
     filters: {
       languages,
     },
-    recentProjects: recentRepos.map((repo) => ({
-      ...repo,
-      openIssueCount: repo._count.issues,
+    recentProjects: recentRepos.map((repo) =>
+      serializeProjectSummary(repo, {
       classifiedIssueCount: 0,
       difficultyCounts: { beginner: 0, intermediate: 0, advanced: 0 },
-      healthScore: healthScore(repo),
-      _count: undefined,
-    })),
+      })
+    ),
   };
 
   await setCachedJson(cacheKey, payload, 60 * 60, "projects-directory");

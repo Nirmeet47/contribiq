@@ -15,26 +15,9 @@ import {
 import { Activity, GitFork, Search, Star } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import type { ProjectSummary } from "@/lib/project-serializer";
 
 type ProjectSort = "activity" | "stars" | "issues" | "health" | "name";
-
-export type ProjectSummary = {
-  id: string;
-  owner: string;
-  name: string;
-  fullName: string;
-  description: string | null;
-  categories: string[];
-  stars: number;
-  language: string | null;
-  maintainerScore: number;
-  activityScore: number;
-  healthScore: number;
-  openIssueCount: number;
-  classifiedIssueCount: number;
-  lastFetchedAt?: string | null;
-  difficultyCounts?: Record<string, number>;
-};
 
 type ProjectsResponse = {
   total: number;

@@ -102,21 +102,21 @@ function calculateContributionFriendliness({
 
 export async function GET(
   _request: Request,
-  { params }: { params: Promise<{ repoId: string }> }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
-  const { repoId } = await params;
-  const cacheKey = `project:${repoId}`;
+  const { projectId } = await params;
+  const cacheKey = `project:${projectId}`;
   const cached = await redis.get(cacheKey);
 
   if (cached) {
     const cachedPayload = JSON.parse(cached);
-    if (typeof cachedPayload?.repo?.contributionFriendliness === "number") {
+    if (typeof cachedPayload?.project?.contributionFriendliness === "number") {
       return NextResponse.json(cachedPayload);
     }
   }
 
   const repo = await prisma.repo.findUnique({
-    where: { id: repoId },
+    where: { id: projectId },
     select: {
       id: true,
       owner: true,
@@ -131,14 +131,14 @@ export async function GET(
   });
 
   if (!repo) {
-    return NextResponse.json({ error: "Repo not found" }, { status: 404 });
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
   const [issueBreakdown, techStack, openIssues, openIssueLabels] = await Promise.all([
-    getIssueTypeBreakdown(repoId),
+    getIssueTypeBreakdown(projectId),
     fetchTechStack(repo.owner, repo.name),
     prisma.issue.findMany({
-      where: { repoId, state: "open", classified: true },
+      where: { repoId: projectId, state: "open", classified: true },
       orderBy: { updatedAt: "desc" },
       take: 10,
       select: {
@@ -153,13 +153,13 @@ export async function GET(
       },
     }),
     prisma.issue.findMany({
-      where: { repoId, state: "open" },
+      where: { repoId: projectId, state: "open" },
       select: { labels: true },
     }),
   ]);
 
   const payload = {
-    repo: {
+    project: {
       ...repo,
       contributionFriendliness: calculateContributionFriendliness({
         openIssueLabels: openIssueLabels.map((issue) => issue.labels),
