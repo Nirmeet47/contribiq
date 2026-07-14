@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { DashboardFilterSelect, DashboardMultiSelect } from "@/components/dashboard/DashboardFilterSelect";
+import { apiGet, apiJson } from "@/lib/api-client";
 import { isLanguageSkill, skillIdentity } from "@/lib/skills";
 
 type Difficulty = "beginner" | "intermediate" | "advanced";
@@ -239,15 +240,11 @@ async function fetchFeed({
   if (issueType) params.set("issueType", issueType);
   for (const language of languages) params.append("language", language);
 
-  const response = await fetch(`/api/feed?${params.toString()}`);
-  if (!response.ok) throw new Error("Failed to load feed");
-  return (await response.json()) as FeedResponse;
+  return apiGet<FeedResponse>(`/api/feed?${params.toString()}`, "Failed to load feed");
 }
 
 async function fetchSkills() {
-  const response = await fetch("/api/me/skills");
-  if (!response.ok) throw new Error("Failed to load skills");
-  return (await response.json()) as SkillsResponse;
+  return apiGet<SkillsResponse>("/api/me/skills", "Failed to load skills");
 }
 
 function buildMatchReasons(match: FeedMatch, userSkills: UserSkill[]) {
@@ -335,12 +332,11 @@ function RecommendedIssueCard({
 
   const bookmarkMutation = useMutation({
     mutationFn: async (nextBookmarked: boolean) => {
-      const response = await fetch("/api/bookmarks", {
+      await apiJson("/api/bookmarks", {
         method: nextBookmarked ? "POST" : "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ issueId: match.issue.id }),
+        body: { issueId: match.issue.id },
+        fallbackMessage: "Failed to update bookmark",
       });
-      if (!response.ok) throw new Error("Failed to update bookmark");
     },
     onMutate: (nextBookmarked) => {
       setBookmarked(nextBookmarked);
@@ -359,12 +355,10 @@ function RecommendedIssueCard({
     mutationFn: async () => {
       if (dismissed) return;
 
-      const response = await fetch("/api/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ issueId: match.issue.id, type: "not_interested" }),
+      await apiJson("/api/feedback", {
+        body: { issueId: match.issue.id, type: "not_interested" },
+        fallbackMessage: "Failed to dismiss issue",
       });
-      if (!response.ok) throw new Error("Failed to dismiss issue");
     },
     onMutate: () => {
       setDismissed(true);
@@ -379,11 +373,9 @@ function RecommendedIssueCard({
 
   const workingMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch(`/api/issues/${match.issue.id}/working`, {
-        method: "POST",
+      return apiJson<{ working: boolean }>(`/api/issues/${match.issue.id}/working`, {
+        fallbackMessage: "Failed to mark issue as working",
       });
-      if (!response.ok) throw new Error("Failed to mark issue as working");
-      return (await response.json()) as { working: boolean };
     },
     onSuccess: (payload) => {
       if (payload.working) {

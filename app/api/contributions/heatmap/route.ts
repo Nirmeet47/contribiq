@@ -1,33 +1,13 @@
 import { NextResponse } from "next/server";
+import { getCurrentDbUser } from "@/lib/auth-user";
 import { buildLocalContributionHeatmap } from "@/lib/contribution-activity";
 import { fetchGitHubContributionStats } from "@/lib/github-contributions";
 import { prisma } from "@/lib/prisma";
-import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-async function getDbUser() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) return null;
-
-  const githubIdStr = user.user_metadata?.provider_id;
-  if (!githubIdStr) return null;
-
-  const dbUser = await prisma.user.findUnique({
-    where: { githubId: parseInt(githubIdStr, 10) },
-    select: { id: true, username: true, githubToken: true },
-  });
-
-  return dbUser ?? null;
-}
-
 export async function GET() {
-  const dbUser = await getDbUser();
+  const dbUser = await getCurrentDbUser({ id: true, username: true, githubToken: true });
   if (!dbUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

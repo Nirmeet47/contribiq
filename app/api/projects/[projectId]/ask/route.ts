@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getCurrentDbUserId } from "@/lib/auth-user";
 import { prisma } from "@/lib/prisma";
-import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,26 +18,6 @@ const askSchema = z.object({
     .optional(),
 });
 
-async function getDbUserId() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) return null;
-
-  const githubIdStr = user.user_metadata?.provider_id;
-  if (!githubIdStr) return null;
-
-  const dbUser = await prisma.user.findUnique({
-    where: { githubId: parseInt(githubIdStr, 10) },
-    select: { id: true },
-  });
-
-  return dbUser?.id ?? null;
-}
-
 function getAiApiBaseUrl() {
   return process.env.AI_API_BASE_URL ?? "http://127.0.0.1:8001";
 }
@@ -46,7 +26,7 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
-  const userId = await getDbUserId();
+  const userId = await getCurrentDbUserId();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { PROJECT_CACHE_TTL_SECONDS } from "@/lib/cache-constants";
 import { getAppGitHubToken } from "@/lib/github-token";
 import { prisma } from "@/lib/prisma";
 import { getIssueTypeBreakdown } from "@/lib/project-intelligence";
@@ -171,7 +172,7 @@ export async function GET(
     openIssues,
   };
 
-  await redis.set(cacheKey, JSON.stringify(payload), "EX", 60 * 60);
+  await redis.set(cacheKey, JSON.stringify(payload), "EX", PROJECT_CACHE_TTL_SECONDS);
 
   return NextResponse.json(payload);
 }

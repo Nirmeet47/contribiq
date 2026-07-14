@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { appConfig } from "@/lib/app-config";
+import { getCurrentDbUserId } from "@/lib/auth-user";
+import { ISSUE_CACHE_TTL_SECONDS } from "@/lib/cache-constants";
 import { getAppGitHubToken } from "@/lib/github-token";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
-import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -26,24 +27,6 @@ type PublicIssuePayload = {
   similarIssues: Awaited<ReturnType<typeof getSimilarIssues>>;
   comments: Awaited<ReturnType<typeof fetchIssueComments>>;
 };
-
-async function getDbUser() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) return null;
-
-  const githubIdStr = user.user_metadata?.provider_id;
-  if (!githubIdStr) return null;
-
-  return prisma.user.findUnique({
-    where: { githubId: parseInt(githubIdStr, 10) },
-    select: { id: true },
-  });
-}
 
 function issueNumberFromUrl(url: string) {
   const match = url.match(/\/issues\/(\d+)(?:$|[?#])/);
@@ -170,8 +153,8 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ issueId: string }> }
 ) {
-  const dbUser = await getDbUser();
-  if (!dbUser) {
+  const userId = await getCurrentDbUserId();
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -195,10 +178,10 @@ export async function GET(
     ]);
 
     publicPayload = { issue, similarIssues, comments };
-    await redis.set(issueCacheKey, JSON.stringify(publicPayload), "EX", 300);
+    await redis.set(issueCacheKey, JSON.stringify(publicPayload), "EX", ISSUE_CACHE_TTL_SECONDS);
   }
 
-  const userState = await getUserIssueState(dbUser.id, issueId);
+  const userState = await getUserIssueState(userId, issueId);
 
   const payload = {
     ...publicPayload,

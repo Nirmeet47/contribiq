@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { appConfig } from "@/lib/app-config";
+import { getCurrentDbUser } from "@/lib/auth-user";
 import { getCachedJson, setCachedJson } from "@/lib/cache";
 import {
   FEED_CACHE_TTL_SECONDS,
@@ -10,7 +11,6 @@ import {
 import { getAppGitHubToken } from "@/lib/github-token";
 import { prisma } from "@/lib/prisma";
 import { skillIdentity } from "@/lib/skills";
-import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -60,30 +60,16 @@ async function deleteIssueCaches(issueId: string, repoId: string) {
 }
 
 async function getDbUser() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) return null;
-
-  const githubIdStr = user.user_metadata?.provider_id;
-  if (!githubIdStr) return null;
-
-  return prisma.user.findUnique({
-    where: { githubId: parseInt(githubIdStr, 10) },
-    select: {
-      id: true,
-      interests: true,
-      timeCommitment: true,
-      skillProfile: {
-        select: {
-          skills: {
-            where: { isLanguage: true },
-            orderBy: { name: "asc" },
-            select: { name: true },
-          },
+  return getCurrentDbUser({
+    id: true,
+    interests: true,
+    timeCommitment: true,
+    skillProfile: {
+      select: {
+        skills: {
+          where: { isLanguage: true },
+          orderBy: { name: "asc" },
+          select: { name: true },
         },
       },
     },

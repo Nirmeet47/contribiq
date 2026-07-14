@@ -5,6 +5,7 @@ import { ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { DashboardProfileInsights } from "./DashboardProfileInsights";
 import { RecommendedIssues } from "./RecommendedIssues";
+import { apiGet } from "@/lib/api-client";
 
 type DashboardUser = {
   username?: string | null;
@@ -19,9 +20,7 @@ type DashboardUser = {
 };
 
 async function fetchMe() {
-  const response = await fetch("/api/me");
-  if (!response.ok) throw new Error("Failed to load profile");
-  return (await response.json()) as DashboardUser;
+  return apiGet<DashboardUser>("/api/me", "Failed to load profile");
 }
 
 function formatDate(value: string | Date | null | undefined) {

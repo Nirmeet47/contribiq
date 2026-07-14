@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { GitFork } from "lucide-react";
+import { apiGet } from "@/lib/api-client";
 
 type TrendingProject = {
   id: string;
@@ -20,9 +21,11 @@ type TrendingProjectsResponse = {
 };
 
 async function fetchTrendingProjects() {
-  const response = await fetch("/api/projects/trending", { cache: "no-store" });
-  if (!response.ok) throw new Error("Failed to load trending projects");
-  return (await response.json()) as TrendingProjectsResponse;
+  return apiGet<TrendingProjectsResponse>(
+    "/api/projects/trending",
+    "Failed to load trending projects",
+    { cache: "no-store" }
+  );
 }
 
 function formatStars(value: number) {

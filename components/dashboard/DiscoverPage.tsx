@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { DashboardFilterSelect, DashboardMultiSelect } from "@/components/dashboard/DashboardFilterSelect";
 import { ProjectCard } from "@/components/dashboard/ProjectsCatalogPage";
+import { apiGet } from "@/lib/api-client";
 import type { ProjectSummary } from "@/lib/project-serializer";
 
 type Difficulty = "beginner" | "intermediate" | "advanced";
@@ -53,9 +54,7 @@ function titleCase(value: string) {
 }
 
 async function fetchJson<T>(url: string) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Failed to fetch ${url}`);
-  return (await response.json()) as T;
+  return apiGet<T>(url, `Failed to fetch ${url}`);
 }
 
 function useDebouncedValue<T>(value: T, delayMs: number) {

@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Activity, CalendarDays, Flame, GitCommit, GitPullRequest } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { apiGet } from "@/lib/api-client";
 
 type Contribution = {
   id: string;
@@ -49,9 +50,7 @@ type MeResponse = {
 };
 
 async function fetchJson<T>(url: string) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Failed to fetch ${url}`);
-  return (await response.json()) as T;
+  return apiGet<T>(url, `Failed to fetch ${url}`);
 }
 
 function formatDate(value: string) {

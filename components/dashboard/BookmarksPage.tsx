@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Bookmark, CheckCircle2, Clock, ExternalLink, GitPullRequest, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { apiGet, apiJson } from "@/lib/api-client";
 
 type BookmarkIssue = {
   id: string;
@@ -48,9 +49,7 @@ type BookmarksResponse = {
 };
 
 async function fetchBookmarks() {
-  const response = await fetch("/api/bookmarks");
-  if (!response.ok) throw new Error("Failed to load bookmarks");
-  return (await response.json()) as BookmarksResponse;
+  return apiGet<BookmarksResponse>("/api/bookmarks", "Failed to load bookmarks");
 }
 
 function titleCase(value: string) {
@@ -74,12 +73,11 @@ export function BookmarksPage() {
 
   const removeBookmarkMutation = useMutation({
     mutationFn: async (issueId: string) => {
-      const response = await fetch("/api/bookmarks", {
+      await apiJson("/api/bookmarks", {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ issueId }),
+        body: { issueId },
+        fallbackMessage: "Failed to remove bookmark",
       });
-      if (!response.ok) throw new Error("Failed to remove bookmark");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bookmarks"] });
@@ -89,10 +87,9 @@ export function BookmarksPage() {
 
   const workingMutation = useMutation({
     mutationFn: async (issueId: string) => {
-      const response = await fetch(`/api/issues/${issueId}/working`, {
-        method: "POST",
+      await apiJson(`/api/issues/${issueId}/working`, {
+        fallbackMessage: "Failed to update active work",
       });
-      if (!response.ok) throw new Error("Failed to update active work");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bookmarks"] });

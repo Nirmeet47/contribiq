@@ -23,6 +23,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { apiJson } from "@/lib/api-client";
 
 type WorkingIssue = {
   id: string;
@@ -114,10 +115,9 @@ export function WorkingPage() {
 
   const clearWorkingMutation = useMutation({
     mutationFn: async (issueId: string) => {
-      const response = await fetch(`/api/issues/${issueId}/working`, {
-        method: "POST",
+      await apiJson(`/api/issues/${issueId}/working`, {
+        fallbackMessage: "Failed to update active work",
       });
-      if (!response.ok) throw new Error("Failed to update active work");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["working"] });
