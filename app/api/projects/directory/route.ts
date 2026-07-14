@@ -38,8 +38,8 @@ export async function GET(request: Request) {
 
   const { languages: selectedLanguages, difficulty, minResponsiveness, sort } = parsed.data;
   const languageCacheKey = selectedLanguages.length > 0 ? selectedLanguages.sort().join(",") : "all";
-  const cacheKey = `repos:v2:${languageCacheKey}:${difficulty ?? "all"}:${minResponsiveness ?? "all"}:${sort}`;
-  const cached = await getCachedJson<unknown>(cacheKey, "repos");
+  const cacheKey = `projects:directory:v1:${languageCacheKey}:${difficulty ?? "all"}:${minResponsiveness ?? "all"}:${sort}`;
+  const cached = await getCachedJson<unknown>(cacheKey, "projects-directory");
   if (cached) return NextResponse.json(cached);
 
   const repos = await prisma.repo.findMany({
@@ -117,28 +117,30 @@ export async function GET(request: Request) {
     difficultyByRepo.set(row.repoId, current);
   }
 
-  const payload = {
-    repos: repos.map((repo) => {
-      const difficultyCounts =
-        difficultyByRepo.get(repo.id) ?? { beginner: 0, intermediate: 0, advanced: 0 };
-      const classifiedIssueCount = Object.values(difficultyCounts).reduce(
-        (sum, value) => sum + value,
-        0
-      );
+  const projects = repos.map((repo) => {
+    const difficultyCounts =
+      difficultyByRepo.get(repo.id) ?? { beginner: 0, intermediate: 0, advanced: 0 };
+    const classifiedIssueCount = Object.values(difficultyCounts).reduce(
+      (sum, value) => sum + value,
+      0
+    );
 
-      return {
-        ...repo,
-        openIssueCount: repo._count.issues,
-        classifiedIssueCount,
-        difficultyCounts,
-        healthScore: healthScore(repo),
-        _count: undefined,
-      };
-    }),
+    return {
+      ...repo,
+      openIssueCount: repo._count.issues,
+      classifiedIssueCount,
+      difficultyCounts,
+      healthScore: healthScore(repo),
+      _count: undefined,
+    };
+  });
+
+  const payload = {
+    projects,
     filters: {
       languages,
     },
-    recentRepos: recentRepos.map((repo) => ({
+    recentProjects: recentRepos.map((repo) => ({
       ...repo,
       openIssueCount: repo._count.issues,
       classifiedIssueCount: 0,
@@ -148,6 +150,6 @@ export async function GET(request: Request) {
     })),
   };
 
-  await setCachedJson(cacheKey, payload, 60 * 60, "repos");
+  await setCachedJson(cacheKey, payload, 60 * 60, "projects-directory");
   return NextResponse.json(payload);
 }

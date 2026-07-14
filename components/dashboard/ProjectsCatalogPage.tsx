@@ -18,7 +18,7 @@ import { useState } from "react";
 
 type ProjectSort = "activity" | "stars" | "issues" | "health" | "name";
 
-export type ProjectRepo = {
+export type ProjectSummary = {
   id: string;
   owner: string;
   name: string;
@@ -32,7 +32,7 @@ export type ProjectRepo = {
   healthScore: number;
   openIssueCount: number;
   classifiedIssueCount: number;
-  lastFetchedAt: string | null;
+  lastFetchedAt?: string | null;
   difficultyCounts?: Record<string, number>;
 };
 
@@ -44,7 +44,7 @@ type ProjectsResponse = {
   totalOpenIssues: number;
   hasNextPage: boolean;
   hasPreviousPage: boolean;
-  repos: ProjectRepo[];
+  projects: ProjectSummary[];
   filters: {
     languages: string[];
     categories: string[];
@@ -122,8 +122,8 @@ function GitHubMark({ className }: { className?: string }) {
   );
 }
 
-export function ProjectCard({ repo }: { repo: ProjectRepo }) {
-  const logoUrl = `https://github.com/${repo.owner}.png`;
+export function ProjectCard({ project }: { project: ProjectSummary }) {
+  const logoUrl = `https://github.com/${project.owner}.png`;
 
   return (
     <Card className="flex min-h-[278px] flex-col transition-colors hover:border-zinc-700">
@@ -133,19 +133,19 @@ export function ProjectCard({ repo }: { repo: ProjectRepo }) {
             <div
               className="h-11 w-11 shrink-0 rounded-sm border border-zinc-800 bg-zinc-900 bg-cover bg-center"
               style={{ backgroundImage: `url(${logoUrl})` }}
-              aria-label={`${repo.owner} logo`}
+              aria-label={`${project.owner} logo`}
             />
             <div className="min-w-0">
-              <p className="truncate text-xs font-bold text-zinc-500">{repo.owner}</p>
-              <CardTitle className="mt-0.5 truncate text-lg leading-6">{repo.fullName}</CardTitle>
+              <p className="truncate text-xs font-bold text-zinc-500">{project.owner}</p>
+              <CardTitle className="mt-0.5 truncate text-lg leading-6">{project.fullName}</CardTitle>
             </div>
           </div>
-          <Badge variant={repo.openIssueCount > 0 ? "success" : "secondary"}>
-            {repo.openIssueCount} open
+          <Badge variant={project.openIssueCount > 0 ? "success" : "secondary"}>
+            {project.openIssueCount} open
           </Badge>
         </div>
         <CardDescription className="line-clamp-2">
-          {repo.description || "Curated repository in the ContribIQ catalog."}
+          {project.description || "Curated project in the ContribIQ catalog."}
         </CardDescription>
       </CardHeader>
 
@@ -154,34 +154,34 @@ export function ProjectCard({ repo }: { repo: ProjectRepo }) {
           <div className="rounded-sm border border-zinc-900 bg-zinc-950 p-3">
             <div className="flex items-center gap-1 text-xs font-bold text-zinc-300">
               <Star className="h-3.5 w-3.5 text-amber-300" />
-              {formatStars(repo.stars)}
+              {formatStars(project.stars)}
             </div>
             <p className="mt-1 text-[11px] font-medium text-zinc-600">Stars</p>
           </div>
           <div className="rounded-sm border border-zinc-900 bg-zinc-950 p-3">
             <div className="flex items-center gap-1 text-xs font-bold text-zinc-300">
               <GitFork className="h-3.5 w-3.5 text-emerald-300" />
-              {repo.classifiedIssueCount}
+              {project.classifiedIssueCount}
             </div>
             <p className="mt-1 text-[11px] font-medium text-zinc-600">Ready</p>
           </div>
           <div className="rounded-sm border border-zinc-900 bg-zinc-950 p-3">
             <div className="flex items-center gap-1 text-xs font-bold text-zinc-300">
               <Activity className="h-3.5 w-3.5 text-sky-300" />
-              {percent(repo.healthScore)}
+              {percent(project.healthScore)}
             </div>
             <p className="mt-1 text-[11px] font-medium text-zinc-600">Health</p>
           </div>
         </div>
 
         <div className="space-y-3">
-          <MetricBar label="Maintainers" value={repo.maintainerScore} />
-          <MetricBar label="Activity" value={repo.activityScore} />
+          <MetricBar label="Maintainers" value={project.maintainerScore} />
+          <MetricBar label="Activity" value={project.activityScore} />
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {repo.language && <Badge variant="outline">{repo.language}</Badge>}
-          {repo.categories.slice(0, 3).map((category) => (
+          {project.language && <Badge variant="outline">{project.language}</Badge>}
+          {project.categories.slice(0, 3).map((category) => (
             <Badge key={category} variant="secondary">
               {titleCase(category)}
             </Badge>
@@ -191,17 +191,17 @@ export function ProjectCard({ repo }: { repo: ProjectRepo }) {
 
       <CardFooter className="justify-between border-t border-zinc-900 pt-4">
         <Link
-          href={`/projects/${repo.id}`}
+          href={`/projects/${project.id}`}
           className="inline-flex h-9 items-center justify-center rounded-sm bg-emerald-500 px-4 text-xs font-bold text-zinc-950 transition-colors hover:bg-emerald-400"
         >
           View project
         </Link>
         <a
-          href={`https://github.com/${repo.fullName}`}
+          href={`https://github.com/${project.fullName}`}
           target="_blank"
           rel="noreferrer"
           className="inline-flex h-9 w-9 items-center justify-center rounded-sm border border-zinc-800 bg-zinc-950 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-white"
-          aria-label={`Open ${repo.fullName} on GitHub`}
+          aria-label={`Open ${project.fullName} on GitHub`}
           title="Open on GitHub"
         >
           <GitHubMark className="h-4 w-4" />
@@ -224,7 +224,7 @@ export function ProjectsCatalogPage() {
     placeholderData: keepPreviousData,
   });
 
-  const repos = projectsQuery.data?.repos ?? [];
+  const projects = projectsQuery.data?.projects ?? [];
   const languageOptions = projectsQuery.data?.filters.languages ?? [];
   const categoryOptions = projectsQuery.data?.filters.categories.slice(0, 12) ?? [];
 
@@ -245,7 +245,7 @@ export function ProjectsCatalogPage() {
           <div className="grid grid-cols-2 gap-2 sm:w-64">
             <Card className="p-3">
               <p className="text-xl font-bold text-zinc-100">{projectsQuery.data?.total ?? 0}</p>
-              <p className="text-[11px] font-medium text-zinc-500">Visible repos</p>
+              <p className="text-[11px] font-medium text-zinc-500">Visible projects</p>
             </Card>
             <Card className="p-3">
               <p className="text-xl font-bold text-zinc-100">
@@ -337,22 +337,22 @@ export function ProjectsCatalogPage() {
           <Card className="p-8 text-center text-sm font-medium text-red-300">
             Projects could not be loaded.
           </Card>
-        ) : repos.length === 0 ? (
+        ) : projects.length === 0 ? (
           <Card className="p-10 text-center">
-            <h2 className="text-lg font-bold text-zinc-100">No repositories found</h2>
+            <h2 className="text-lg font-bold text-zinc-100">No projects found</h2>
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-zinc-500">
               Try a different search or filter combination.
             </p>
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {repos.map((repo) => (
-              <ProjectCard key={repo.id} repo={repo} />
+            {projects.map((project) => (
+              <ProjectCard key={project.id} project={project} />
             ))}
           </div>
         )}
 
-        {!projectsQuery.isLoading && !projectsQuery.isError && repos.length > 0 && (
+        {!projectsQuery.isLoading && !projectsQuery.isError && projects.length > 0 && (
           <div className="flex flex-col gap-3 border-t border-zinc-900 pt-5 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm font-medium text-zinc-500">
               Page {projectsQuery.data?.page ?? page} of {projectsQuery.data?.totalPages ?? 1}

@@ -15,7 +15,7 @@ const searchSchema = z.object({
 });
 
 type IssueHit = { id: string; score: number };
-type RepoHit = {
+type ProjectHit = {
   id: string;
   owner: string;
   name: string;
@@ -41,7 +41,7 @@ export async function GET(request: Request) {
   const query = parsed.data.q;
   const queryLike = `%${query}%`;
   const userId = await getOptionalDbUserId();
-  const [issueHits, repos] = await Promise.all([
+  const [issueHits, projects] = await Promise.all([
     prisma.$queryRaw<IssueHit[]>`
       SELECT i.id,
         (
@@ -72,7 +72,7 @@ export async function GET(request: Request) {
       ORDER BY score DESC, i."createdAt" DESC
       LIMIT 20
     `,
-    prisma.$queryRaw<RepoHit[]>`
+    prisma.$queryRaw<ProjectHit[]>`
       SELECT id, owner, name, "fullName", description, categories, stars, language,
         "maintainerScore", "activityScore", "createdAt",
         (
@@ -109,6 +109,6 @@ export async function GET(request: Request) {
       .map((id) => issueById.get(id))
       .filter((issue): issue is NonNullable<typeof issue> => Boolean(issue))
       .map((issue) => serializeIssueForFeed(issue, userId)),
-    repos,
+    projects,
   });
 }

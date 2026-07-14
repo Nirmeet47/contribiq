@@ -130,7 +130,7 @@ export async function GET(request: Request) {
     totalOpenIssues,
     hasNextPage: currentPage < totalPages,
     hasPreviousPage: currentPage > 1,
-    repos: paginatedProjects,
+    projects: paginatedProjects,
     filters: {
       languages,
       categories,

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { DashboardFilterSelect, DashboardMultiSelect } from "@/components/dashboard/DashboardFilterSelect";
-import { ProjectCard, type ProjectRepo } from "@/components/dashboard/ProjectsCatalogPage";
+import { ProjectCard, type ProjectSummary } from "@/components/dashboard/ProjectsCatalogPage";
 
 type Difficulty = "beginner" | "intermediate" | "advanced";
 type IssueType = "bug" | "feature" | "docs" | "refactor";
@@ -34,9 +34,18 @@ type Issue = {
   };
 };
 
-type SearchResponse = { issues: Issue[]; repos: ProjectRepo[] };
+type ProjectSearchResult = Pick<
+  ProjectSummary,
+  "id" | "fullName" | "description" | "language" | "stars"
+>;
+
+type SearchResponse = { issues: Issue[]; projects: ProjectSearchResult[] };
 type TrendingResponse = { issues: Array<{ bookmarkCount: number; issue: Issue }> };
-type ReposResponse = { repos: ProjectRepo[]; recentRepos: ProjectRepo[]; filters: { languages: string[] } };
+type ProjectDirectoryResponse = {
+  projects: ProjectSummary[];
+  recentProjects: ProjectSummary[];
+  filters: { languages: string[] };
+};
 
 function titleCase(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
@@ -119,19 +128,19 @@ function IssueCard({ issue, badge }: { issue: Issue; badge?: string }) {
   );
 }
 
-function RepoMiniCard({ repo }: { repo: ProjectRepo }) {
+function ProjectMiniCard({ project }: { project: ProjectSearchResult }) {
   return (
-    <Link href={`/projects/${repo.id}`} className="rounded-sm border border-zinc-800 bg-zinc-950 p-4 transition-colors hover:border-zinc-700">
-      <p className="truncate text-sm font-bold text-zinc-100">{repo.fullName}</p>
+    <Link href={`/projects/${project.id}`} className="rounded-sm border border-zinc-800 bg-zinc-950 p-4 transition-colors hover:border-zinc-700">
+      <p className="truncate text-sm font-bold text-zinc-100">{project.fullName}</p>
       <p className="mt-2 line-clamp-2 text-xs leading-5 text-zinc-500">
-        {repo.description || "Curated repository in the ContribIQ catalog."}
+        {project.description || "Curated project in the ContribIQ catalog."}
       </p>
       <div className="mt-3 flex items-center gap-3 text-xs font-medium text-zinc-500">
         <span className="inline-flex items-center gap-1">
           <Star className="h-3 w-3 text-amber-300" />
-          {repo.stars.toLocaleString()}
+          {project.stars.toLocaleString()}
         </span>
-        {repo.language && <span>{repo.language}</span>}
+        {project.language && <span>{project.language}</span>}
       </div>
     </Link>
   );
@@ -157,21 +166,21 @@ export function DiscoverPage() {
     queryFn: () => fetchJson<TrendingResponse>("/api/discover/trending"),
   });
 
-  const reposQuery = useQuery({
-    queryKey: ["repos-directory", { languages: debouncedLanguages, difficulty, minResponsiveness, sort }],
+  const projectsQuery = useQuery({
+    queryKey: ["projects-directory", { languages: debouncedLanguages, difficulty, minResponsiveness, sort }],
     queryFn: () => {
       const params = new URLSearchParams({ sort });
       for (const language of debouncedLanguages) params.append("language", language);
       if (difficulty) params.set("difficulty", difficulty);
       if (minResponsiveness) params.set("minResponsiveness", minResponsiveness);
-      return fetchJson<ReposResponse>(`/api/repos?${params.toString()}`);
+      return fetchJson<ProjectDirectoryResponse>(`/api/projects/directory?${params.toString()}`);
     },
     placeholderData: keepPreviousData,
   });
 
   const searchIssues = searchQuery.data?.issues ?? [];
-  const searchRepos = searchQuery.data?.repos ?? [];
-  const directoryRepos = reposQuery.data?.repos ?? [];
+  const searchProjects = searchQuery.data?.projects ?? [];
+  const directoryProjects = projectsQuery.data?.projects ?? [];
   const trendingIssues = trendingQuery.data?.issues ?? [];
 
   return (
@@ -186,11 +195,11 @@ export function DiscoverPage() {
         </div>
         <div className="grid grid-cols-2 gap-2 sm:w-72">
           <Card className="flex min-h-16 flex-col items-center justify-center p-3 text-center">
-            <p className="text-xl font-bold text-zinc-100">{reposQuery.data?.repos.length ?? 0}</p>
-            <p className="text-[11px] font-medium text-zinc-500">Visible repos</p>
+            <p className="text-xl font-bold text-zinc-100">{projectsQuery.data?.projects.length ?? 0}</p>
+            <p className="text-[11px] font-medium text-zinc-500">Visible projects</p>
           </Card>
           <Card className="flex min-h-16 flex-col items-center justify-center p-3 text-center">
-            <p className="text-xl font-bold text-zinc-100">{reposQuery.data?.filters.languages.length ?? 0}</p>
+            <p className="text-xl font-bold text-zinc-100">{projectsQuery.data?.filters.languages.length ?? 0}</p>
             <p className="text-[11px] font-medium text-zinc-500">Languages</p>
           </Card>
         </div>
@@ -212,7 +221,7 @@ export function DiscoverPage() {
             <DashboardMultiSelect
               value={languages}
               onChange={setLanguages}
-              options={reposQuery.data?.filters.languages ?? []}
+              options={projectsQuery.data?.filters.languages ?? []}
               placeholder="All languages"
               searchPlaceholder="Search language"
               minWidthClassName="w-52"
@@ -261,9 +270,9 @@ export function DiscoverPage() {
             )}
           </div>
           <div className="space-y-3">
-            <h2 className="text-lg font-bold text-zinc-100">Matching repos</h2>
-            {searchRepos.length > 0 ? searchRepos.map((repo) => <RepoMiniCard key={repo.id} repo={repo} />) : (
-              <p className="rounded-sm border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-500">No repos found.</p>
+            <h2 className="text-lg font-bold text-zinc-100">Matching projects</h2>
+            {searchProjects.length > 0 ? searchProjects.map((project) => <ProjectMiniCard key={project.id} project={project} />) : (
+              <p className="rounded-sm border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-500">No projects found.</p>
             )}
           </div>
         </section>
@@ -271,11 +280,11 @@ export function DiscoverPage() {
 
       <section className="space-y-4">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {directoryRepos.slice(0, 9).map((repo) => <ProjectCard key={repo.id} repo={repo} />)}
+          {directoryProjects.slice(0, 9).map((project) => <ProjectCard key={project.id} project={project} />)}
         </div>
-        {!reposQuery.isLoading && directoryRepos.length === 0 && (
+        {!projectsQuery.isLoading && directoryProjects.length === 0 && (
           <Card className="p-8 text-center text-sm font-medium text-zinc-500">
-            No repositories match these filters.
+            No projects match these filters.
           </Card>
         )}
       </section>
