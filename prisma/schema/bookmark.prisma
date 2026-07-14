@@ -10,5 +10,6 @@ model Bookmark {
   issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
   @@unique([userId, issueId])
+  @@index([issueId, userId])
   @@map("bookmarks")
 }

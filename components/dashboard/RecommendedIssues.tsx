@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bookmark,
   BookmarkCheck,
@@ -10,15 +10,25 @@ import {
   ThumbsDown,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { DashboardFilterSelect, DashboardMultiSelect } from "@/components/dashboard/DashboardFilterSelect";
+import { isLanguageSkill, skillIdentity } from "@/lib/skills";
 
 type Difficulty = "beginner" | "intermediate" | "advanced";
 type IssueType = "bug" | "feature" | "docs" | "refactor";
 type SortOrder = "desc" | "asc";
 
+type UserSkill = {
+  name: string;
+  level: "strong" | "moderate" | "learning";
+};
+
 type FeedMatch = {
   id: string;
   score: number;
+  skillSim: number;
+  interestSim: number;
+  diffScore: number;
   issue: {
     id: string;
     title: string;
@@ -41,15 +51,98 @@ type FeedMatch = {
 };
 
 type FeedResponse = {
+  filters?: {
+    languages: string[];
+  };
   matches: FeedMatch[];
   reason?: "profile_incomplete";
 };
 
+type SkillsResponse = {
+  skills: UserSkill[];
+};
+
 const DIFFICULTIES: Difficulty[] = ["beginner", "intermediate", "advanced"];
 const ISSUE_TYPES: IssueType[] = ["bug", "feature", "docs", "refactor"];
+const TECH_LOGOS: Record<string, { src: string; invert?: boolean }> = {
+  javascript: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/javascript/javascript-original.svg",
+  },
+  typescript: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/typescript/typescript-original.svg",
+  },
+  react: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/react/react-original.svg",
+  },
+  "next.js": {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/nextjs/nextjs-original.svg",
+    invert: true,
+  },
+  nextjs: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/nextjs/nextjs-original.svg",
+    invert: true,
+  },
+  node: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/nodejs/nodejs-original.svg",
+  },
+  "node.js": {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/nodejs/nodejs-original.svg",
+  },
+  python: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/python/python-original.svg",
+  },
+  go: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/go/go-original.svg",
+  },
+  rust: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/rust/rust-original.svg",
+    invert: true,
+  },
+  java: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/java/java-original.svg",
+  },
+  vue: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/vuejs/vuejs-original.svg",
+  },
+  svelte: {
+    src: "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/svelte/svelte-original.svg",
+  },
+};
 
 function titleCase(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function techLogoFor(name: string) {
+  return TECH_LOGOS[name.trim().toLowerCase()];
+}
+
+function TechChip({ name }: { name: string }) {
+  const logo = techLogoFor(name);
+
+  return (
+    <span className="inline-flex h-9 items-center justify-center gap-2 rounded-sm bg-zinc-900 px-3 text-xs font-medium text-zinc-300">
+      {logo && (
+        <span
+          aria-hidden="true"
+          className={`h-4 w-4 shrink-0 bg-contain bg-center bg-no-repeat ${logo.invert ? "invert" : ""}`}
+          style={{ backgroundImage: `url(${logo.src})` }}
+        />
+      )}
+      <span className="leading-none">{name}</span>
+    </span>
+  );
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(id);
+  }, [delayMs, value]);
+
+  return debounced;
 }
 
 function scoreTone(score: number) {
@@ -133,27 +226,102 @@ function RecommendedIssueSkeleton() {
 async function fetchFeed({
   difficulty,
   issueType,
+  languages,
   sort,
 }: {
   difficulty?: Difficulty;
   issueType?: IssueType;
+  languages: string[];
   sort: SortOrder;
 }) {
   const params = new URLSearchParams({ sort });
   if (difficulty) params.set("difficulty", difficulty);
   if (issueType) params.set("issueType", issueType);
+  for (const language of languages) params.append("language", language);
 
   const response = await fetch(`/api/feed?${params.toString()}`);
   if (!response.ok) throw new Error("Failed to load feed");
   return (await response.json()) as FeedResponse;
 }
 
+async function fetchSkills() {
+  const response = await fetch("/api/me/skills");
+  if (!response.ok) throw new Error("Failed to load skills");
+  return (await response.json()) as SkillsResponse;
+}
+
+function buildMatchReasons(match: FeedMatch, userSkills: UserSkill[]) {
+  const userSkillIds = new Set(userSkills.map((skill) => skillIdentity(skill.name)));
+  const userLanguageIds = new Set(
+    userSkills.filter((skill) => isLanguageSkill(skill.name)).map((skill) => skillIdentity(skill.name))
+  );
+  const matchedSkills = match.issue.requiredSkills
+    .filter((skill) => userSkillIds.has(skillIdentity(skill)))
+    .slice(0, 3);
+  const reasons: string[] = [];
+
+  if (matchedSkills.length > 0) {
+    reasons.push(`Matched skills: ${matchedSkills.join(", ")}`);
+  } else if (match.skillSim >= 0.65) {
+    reasons.push("Strong skill-profile similarity");
+  }
+
+  if (match.issue.repo.language && userLanguageIds.has(skillIdentity(match.issue.repo.language))) {
+    reasons.push(`${match.issue.repo.language} repo matches your languages`);
+  }
+
+  if (match.interestSim > 0) {
+    reasons.push("Aligned with your contribution interests");
+  }
+
+  if (match.diffScore >= 0.75 && match.issue.difficulty) {
+    reasons.push(`${titleCase(match.issue.difficulty)} difficulty fits your profile`);
+  }
+
+  if (match.issue.repo.maintainerScore >= 0.7) {
+    reasons.push("Maintainers usually respond quickly");
+  }
+
+  return reasons.slice(0, 3);
+}
+
+function FeedRecoveryState({
+  title,
+  detail,
+}: {
+  title: string;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-8 text-center">
+      <h3 className="text-base font-bold text-zinc-100">{title}</h3>
+      <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-zinc-500">{detail}</p>
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+        <Link
+          href="/skills"
+          className="inline-flex h-11 items-center justify-center rounded-sm bg-emerald-500 px-5 text-sm font-bold text-zinc-950 transition-colors hover:bg-emerald-400"
+        >
+          Update skills
+        </Link>
+        <Link
+          href="/settings"
+          className="inline-flex h-11 items-center justify-center rounded-sm border border-zinc-800 bg-zinc-900 px-5 text-sm font-bold text-zinc-200 transition-colors hover:border-zinc-700 hover:text-white"
+        >
+          Preferences
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 function RecommendedIssueCard({
   match,
+  userSkills,
   onDismiss,
   onRestore,
 }: {
   match: FeedMatch;
+  userSkills: UserSkill[];
   onDismiss: (issueId: string) => void;
   onRestore: (issueId: string) => void;
 }) {
@@ -163,6 +331,7 @@ function RecommendedIssueCard({
   const percent = Math.round(match.score * 100);
   const logoUrl = `https://github.com/${match.issue.repo.owner}.png`;
   const responsiveness = responsivenessTone(match.issue.repo.maintainerScore);
+  const matchReasons = buildMatchReasons(match, userSkills);
 
   const bookmarkMutation = useMutation({
     mutationFn: async (nextBookmarked: boolean) => {
@@ -283,16 +452,32 @@ function RecommendedIssueCard({
         </span>
       </div>
 
-      <div className="flex items-center justify-between gap-3 border-t border-zinc-900 pt-4">
-        <div className="flex min-w-0 flex-wrap gap-2">
+      {matchReasons.length > 0 && (
+        <div className="mb-5 rounded-sm border border-zinc-900 bg-zinc-900/40 p-3">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-emerald-400">
+            Why this match
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {matchReasons.map((reason) => (
+              <span
+                key={reason}
+                className="rounded-sm border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-200"
+              >
+                {reason}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-4 border-t border-zinc-900 pt-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           {match.issue.requiredSkills.slice(0, 3).map((skill) => (
-            <span key={skill} className="rounded-sm bg-zinc-900 px-2 py-1 text-[11px] font-medium text-zinc-500">
-              {skill}
-            </span>
+            <TechChip key={skill} name={skill} />
           ))}
           <Link
             href={`/projects/${match.issue.repo.id}`}
-            className="inline-flex items-center justify-center rounded-sm bg-emerald-500 px-4 py-2 text-sm font-bold text-zinc-950 shadow-sm shadow-emerald-950/40 transition-colors hover:bg-emerald-400"
+            className="inline-flex h-9 items-center justify-center rounded-sm bg-emerald-500 px-4 text-sm font-bold text-zinc-950 shadow-sm shadow-emerald-950/40 transition-colors hover:bg-emerald-400"
           >
             View Project
           </Link>
@@ -347,77 +532,77 @@ function RecommendedIssueCard({
 export function RecommendedIssues() {
   const [difficulty, setDifficulty] = useState<Difficulty | undefined>();
   const [issueType, setIssueType] = useState<IssueType | undefined>();
+  const [languages, setLanguages] = useState<string[]>([]);
   const [sort, setSort] = useState<SortOrder>("desc");
   const [dismissedIssueIds, setDismissedIssueIds] = useState<Set<string>>(() => new Set());
+  const debouncedLanguages = useDebouncedValue(languages, 300);
+
+  const skillsQuery = useQuery({
+    queryKey: ["me-skills"],
+    queryFn: fetchSkills,
+  });
 
   const feedQuery = useQuery({
-    queryKey: ["feed", { difficulty, issueType, sort }],
-    queryFn: () => fetchFeed({ difficulty, issueType, sort }),
+    queryKey: ["feed", { difficulty, issueType, languages: debouncedLanguages, sort }],
+    queryFn: () => fetchFeed({ difficulty, issueType, languages: debouncedLanguages, sort }),
+    placeholderData: keepPreviousData,
   });
+  const languageOptions = feedQuery.data?.filters?.languages ?? [];
   const visibleMatches =
     feedQuery.data?.matches.filter((match) => !dismissedIssueIds.has(match.issue.id)) ?? [];
+  const hasActiveFilters = Boolean(difficulty || issueType || languages.length > 0);
 
   return (
-    <section className="space-y-6">
-      <div className="border-b border-zinc-900 pb-6">
-        <p className="text-xs font-bold uppercase tracking-widest text-emerald-400">Personalized feed</p>
-        <h2 className="mt-2 text-3xl font-bold tracking-tight text-zinc-100">Matched repos</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
+    <section className="space-y-3 pb-8">
+      <div>
+        <h2 className="text-3xl font-bold tracking-tight text-white">Matched repos</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
           Issues ranked from your skills, interests, and contribution history.
         </p>
       </div>
 
       <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-4">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setDifficulty(undefined)}
-              className={`rounded-sm border px-3 py-1.5 text-xs font-bold transition-colors ${!difficulty ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white"}`}
-            >
-              All difficulty
-            </button>
-            {DIFFICULTIES.map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setDifficulty(value)}
-                className={`rounded-sm border px-3 py-1.5 text-xs font-bold transition-colors ${difficulty === value ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white"}`}
-              >
-                {titleCase(value)}
-              </button>
-            ))}
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div className="flex flex-wrap gap-3">
+            <DashboardFilterSelect
+              label="Difficulty"
+              value={difficulty ?? ""}
+              onChange={(value) => setDifficulty(value || undefined)}
+              options={[
+                { value: "", label: "All difficulty" },
+                ...DIFFICULTIES.map((value) => ({ value, label: titleCase(value) })),
+              ]}
+            />
+
+            <DashboardFilterSelect
+              label="Type"
+              value={issueType ?? ""}
+              onChange={(value) => setIssueType(value || undefined)}
+              options={[
+                { value: "", label: "All types" },
+                ...ISSUE_TYPES.map((value) => ({ value, label: titleCase(value) })),
+              ]}
+            />
+
+            <DashboardMultiSelect
+              label="Languages"
+              options={languageOptions}
+              value={languages}
+              onChange={setLanguages}
+              placeholder="All languages"
+              searchPlaceholder="Search language"
+            />
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setIssueType(undefined)}
-              className={`rounded-sm border px-3 py-1.5 text-xs font-bold transition-colors ${!issueType ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white"}`}
-            >
-              All types
-            </button>
-            {ISSUE_TYPES.map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setIssueType(value)}
-                className={`rounded-sm border px-3 py-1.5 text-xs font-bold transition-colors ${issueType === value ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white"}`}
-              >
-                {titleCase(value)}
-              </button>
-            ))}
-          </div>
-
-          <select
+          <DashboardFilterSelect
+            label="Sort"
             value={sort}
-            onChange={(event) => setSort(event.target.value as SortOrder)}
-            className="h-9 rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-xs font-bold text-zinc-300 outline-none transition-colors hover:border-zinc-700"
-            aria-label="Sort feed"
-          >
-            <option value="desc">Best match</option>
-            <option value="asc">Lowest match</option>
-          </select>
+            onChange={(value) => setSort((value || "desc") as SortOrder)}
+            options={[
+              { value: "desc", label: "Best match" },
+              { value: "asc", label: "Lowest match" },
+            ]}
+          />
         </div>
       </div>
 
@@ -430,23 +615,30 @@ export function RecommendedIssues() {
       )}
 
       {feedQuery.isError && (
-        <div className="rounded-sm border border-red-500/30 bg-red-500/10 p-4 text-sm font-medium text-red-300">
-          Feed could not be loaded.
-        </div>
+        <FeedRecoveryState
+          title="Feed could not be loaded"
+          detail="The matcher or cache may be temporarily unavailable. Refresh the feed, or adjust your skills and preferences if this keeps happening."
+        />
       )}
 
       {feedQuery.data?.matches.length === 0 && (
-        <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-8 text-center text-sm font-medium text-zinc-500">
-          {feedQuery.data.reason === "profile_incomplete"
-            ? "Complete your skills, interests, and time commitment so matches can be personalized."
-            : "No strong matches yet. Update your skills or wait for more issues to be classified and rescored."}
-        </div>
+        <FeedRecoveryState
+          title={feedQuery.data.reason === "profile_incomplete" ? "Finish your matching profile" : "No strong matches yet"}
+          detail={
+            feedQuery.data.reason === "profile_incomplete"
+              ? "Complete your skills, interests, and time commitment so ContribIQ can rank issues for you."
+              : hasActiveFilters
+                ? "Your current filters may be too narrow. Broaden them or refresh after updating your skills."
+                : "Update your skills, check preferences, or refresh after more issues are classified and rescored."
+          }
+        />
       )}
 
       {feedQuery.data && feedQuery.data.matches.length > 0 && visibleMatches.length === 0 && (
-        <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-8 text-center text-sm font-medium text-zinc-500">
-          No visible recommendations left in this view.
-        </div>
+        <FeedRecoveryState
+          title="No visible recommendations left"
+          detail="You have dismissed or started every issue in this view. Refresh the feed or broaden the filters to bring more options back."
+        />
       )}
 
       {visibleMatches.length > 0 && (
@@ -458,6 +650,7 @@ export function RecommendedIssues() {
             <RecommendedIssueCard
               key={match.id}
               match={match}
+              userSkills={skillsQuery.data?.skills ?? []}
               onDismiss={(issueId) =>
                 setDismissedIssueIds((current) => new Set(current).add(issueId))
               }

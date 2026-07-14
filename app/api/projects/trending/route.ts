@@ -5,8 +5,7 @@ import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-// Maps normalized skill identities to the repo categories they belong to.
-// repo.categories uses the broad buckets from seed_repos.py: frontend, backend, ai, devops, docs, testing, tools, mobile
+// Maps normalized skill identities to broad project categories.
 const SKILL_TO_CATEGORIES: Record<string, string[]> = {
   react: ["frontend"],
   nextjs: ["frontend"],
@@ -120,10 +119,9 @@ export async function GET() {
   );
 
   if (normalizedSkills.size === 0) {
-    return NextResponse.json({ repos: [] });
+    return NextResponse.json({ projects: [] });
   }
 
-  // Build the set of repo categories that map to this user's skills
   const matchingCategories = new Set<string>();
   for (const skill of normalizedSkills) {
     for (const category of SKILL_TO_CATEGORIES[skill] ?? []) {
@@ -155,11 +153,9 @@ export async function GET() {
 
   const rankedRepos = repos
     .map((repo) => {
-      // Direct language match (e.g. repo.language = "TypeScript", user has TypeScript skill)
       const languageIdentity = repo.language ? skillIdentity(repo.language) : "";
       const languageWeight = languageIdentity ? skillWeights.get(languageIdentity) ?? 0 : 0;
 
-      // Category match via skill-to-category mapping (e.g. user has React -> frontend category)
       const categoryWeight = repo.categories.reduce((best, category) => {
         if (!matchingCategories.has(category.toLowerCase())) return best;
 
@@ -200,17 +196,17 @@ export async function GET() {
     selectedIds.add(repo.id);
   }
 
-  const responseRepos = selectedRepos.slice(0, 12).map((repo) => ({
-      id: repo.id,
-      owner: repo.owner,
-      name: repo.name,
-      fullName: repo.fullName,
-      description: repo.description,
-      language: repo.language,
-      stars: repo.stars,
-      categories: repo.categories,
-      activityScore: repo.activityScore,
-    }));
+  const projects = selectedRepos.slice(0, 12).map((repo) => ({
+    id: repo.id,
+    owner: repo.owner,
+    name: repo.name,
+    fullName: repo.fullName,
+    description: repo.description,
+    language: repo.language,
+    stars: repo.stars,
+    categories: repo.categories,
+    activityScore: repo.activityScore,
+  }));
 
-  return NextResponse.json({ repos: responseRepos });
+  return NextResponse.json({ projects });
 }

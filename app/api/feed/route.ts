@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { appConfig } from "@/lib/app-config";
-import { invalidateAllFeedCaches } from "@/lib/feed-cache";
+import { getCachedJson, setCachedJson } from "@/lib/cache";
+import {
+  FEED_CACHE_TTL_SECONDS,
+  FEED_CACHE_VERSION,
+  invalidateAllFeedCaches,
+} from "@/lib/feed-cache";
 import { getAppGitHubToken } from "@/lib/github-token";
 import { prisma } from "@/lib/prisma";
+import { skillIdentity } from "@/lib/skills";
 import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +17,7 @@ export const dynamic = "force-dynamic";
 const feedQuerySchema = z.object({
   difficulty: z.enum(["beginner", "intermediate", "advanced"]).optional(),
   issueType: z.enum(["bug", "feature", "docs", "refactor"]).optional(),
+  languages: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
   sort: z.enum(["desc", "asc"]).default("desc"),
 });
 
@@ -37,28 +44,6 @@ type GitHubIssueResponse = {
   comments?: number;
   html_url?: string;
 };
-
-async function getCachedPayload(cacheKey: string) {
-  try {
-    const { redis } = await import("@/lib/redis");
-    const cached = await redis.get(cacheKey);
-    if (!cached) return null;
-
-    return JSON.parse(cached) as unknown;
-  } catch (error) {
-    console.error("[feed] Failed to read feed cache", { cacheKey, error });
-    return null;
-  }
-}
-
-async function setCachedPayload(cacheKey: string, payload: unknown) {
-  try {
-    const { redis } = await import("@/lib/redis");
-    await redis.set(cacheKey, JSON.stringify(payload), "EX", 300);
-  } catch (error) {
-    console.error("[feed] Failed to write feed cache", { cacheKey, error });
-  }
-}
 
 async function deleteIssueCaches(issueId: string, repoId: string) {
   try {
@@ -88,8 +73,32 @@ async function getDbUser() {
 
   return prisma.user.findUnique({
     where: { githubId: parseInt(githubIdStr, 10) },
-    select: { id: true, interests: true, timeCommitment: true },
+    select: {
+      id: true,
+      interests: true,
+      timeCommitment: true,
+      skillProfile: {
+        select: {
+          skills: {
+            where: { isLanguage: true },
+            orderBy: { name: "asc" },
+            select: { name: true },
+          },
+        },
+      },
+    },
   });
+}
+
+function getUserLanguageOptions(dbUser: Awaited<ReturnType<typeof getDbUser>>) {
+  const languages = dbUser?.skillProfile?.skills.map((skill) => skill.name) ?? [];
+  const byIdentity = new Map<string, string>();
+
+  for (const language of languages) {
+    byIdentity.set(skillIdentity(language), language);
+  }
+
+  return [...byIdentity.values()].sort((a, b) => a.localeCompare(b));
 }
 
 function issueNumberFromUrl(url: string) {
@@ -136,17 +145,17 @@ async function validateStaleIssues<T extends FeedMatch>(matches: T[]) {
 
   const closedIssueIds = new Set<string>();
 
-  for (const match of staleMatches) {
+  await Promise.all(staleMatches.map(async (match) => {
     const latest = await fetchGitHubIssue(
       match.issue.repo.owner,
       match.issue.repo.name,
       match.issue.githubUrl
     );
 
-    if (!latest?.state) continue;
+    if (!latest?.state) return;
 
     const latestState = latest.state === "closed" ? "closed" : "open";
-    if (latestState === match.issue.state) continue;
+    if (latestState === match.issue.state) return;
 
     await prisma.issue.update({
       where: { id: match.issue.id },
@@ -171,7 +180,7 @@ async function validateStaleIssues<T extends FeedMatch>(matches: T[]) {
     if (latestState === "closed") {
       closedIssueIds.add(match.issue.id);
     }
-  }
+  }));
 
   if (closedIssueIds.size > 0) {
     await invalidateAllFeedCaches("lazy-issue-state-validation");
@@ -187,17 +196,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if ((dbUser.interests?.length ?? 0) === 0 || dbUser.timeCommitment <= 0) {
-    return NextResponse.json({
-      matches: [],
-      reason: "profile_incomplete",
-    });
-  }
-
   const { searchParams } = new URL(request.url);
+  const languageParams = [
+    ...searchParams.getAll("language"),
+    ...(searchParams.get("languages")?.split(",") ?? []),
+  ]
+    .map((language) => language.trim())
+    .filter(Boolean);
   const parsed = feedQuerySchema.safeParse({
     difficulty: searchParams.get("difficulty") || undefined,
     issueType: searchParams.get("issueType") || undefined,
+    languages: [...new Set(languageParams)],
     sort: searchParams.get("sort") || undefined,
   });
 
@@ -205,12 +214,23 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: z.treeifyError(parsed.error) }, { status: 400 });
   }
 
-  const { difficulty, issueType, sort } = parsed.data;
-  const cacheKey = `feed:v3:${dbUser.id}:${difficulty ?? "all"}:${issueType ?? "all"}:${sort}:${appConfig.feedMinScore}:${appConfig.feedSkillOnlyMinScore}`;
-  const cached = await getCachedPayload(cacheKey);
+  const { difficulty, issueType, languages, sort } = parsed.data;
+  const languageCacheKey = languages.length > 0 ? languages.sort().join(",") : "all";
+  const cacheKey = `feed:${FEED_CACHE_VERSION}:${dbUser.id}:${difficulty ?? "all"}:${issueType ?? "all"}:${languageCacheKey}:${sort}:${appConfig.feedMinScore}:${appConfig.feedSkillOnlyMinScore}`;
+  const cached = await getCachedJson<unknown>(cacheKey, "feed");
 
   if (cached) {
     return NextResponse.json(cached);
+  }
+
+  const userLanguageOptions = getUserLanguageOptions(dbUser);
+
+  if ((dbUser.interests?.length ?? 0) === 0 || dbUser.timeCommitment <= 0) {
+    return NextResponse.json({
+      matches: [],
+      filters: { languages: userLanguageOptions },
+      reason: "profile_incomplete",
+    });
   }
 
   const matches = await prisma.issueMatch.findMany({
@@ -225,6 +245,13 @@ export async function GET(request: Request) {
         state: "open",
         ...(difficulty ? { difficulty } : {}),
         ...(issueType ? { issueType } : {}),
+        ...(languages.length > 0
+          ? {
+              repo: {
+                language: { in: languages, mode: "insensitive" as const },
+              },
+            }
+          : {}),
         feedback: {
           none: { userId: dbUser.id },
         },
@@ -277,6 +304,9 @@ export async function GET(request: Request) {
   const visibleMatches = await validateStaleIssues(matches);
 
   const payload = {
+    filters: {
+      languages: userLanguageOptions,
+    },
     matches: visibleMatches.map((match) => ({
       id: match.id,
       score: match.score,
@@ -307,7 +337,7 @@ export async function GET(request: Request) {
     })),
   };
 
-  await setCachedPayload(cacheKey, payload);
+  await setCachedJson(cacheKey, payload, FEED_CACHE_TTL_SECONDS, "feed");
 
   return NextResponse.json(payload);
 }

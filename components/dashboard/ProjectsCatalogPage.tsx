@@ -1,8 +1,9 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DashboardFilterSelect, DashboardMultiSelect } from "@/components/dashboard/DashboardFilterSelect";
 import {
   Card,
   CardContent,
@@ -11,13 +12,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Activity, ExternalLink, GitFork, Search, Star } from "lucide-react";
+import { Activity, GitFork, Search, Star } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
 type ProjectSort = "activity" | "stars" | "issues" | "health" | "name";
 
-export type ProjectRepo = {
+export type ProjectSummary = {
   id: string;
   owner: string;
   name: string;
@@ -31,7 +32,7 @@ export type ProjectRepo = {
   healthScore: number;
   openIssueCount: number;
   classifiedIssueCount: number;
-  lastFetchedAt: string | null;
+  lastFetchedAt?: string | null;
   difficultyCounts?: Record<string, number>;
 };
 
@@ -43,7 +44,7 @@ type ProjectsResponse = {
   totalOpenIssues: number;
   hasNextPage: boolean;
   hasPreviousPage: boolean;
-  repos: ProjectRepo[];
+  projects: ProjectSummary[];
   filters: {
     languages: string[];
     categories: string[];
@@ -79,20 +80,20 @@ function titleCase(value: string) {
 async function fetchProjects({
   search,
   category,
-  language,
+  languages,
   sort,
   page,
 }: {
   search: string;
   category: string;
-  language: string;
+  languages: string[];
   sort: ProjectSort;
   page: number;
 }) {
   const params = new URLSearchParams({ sort, page: page.toString() });
   if (search.trim()) params.set("q", search.trim());
   if (category) params.set("category", category);
-  if (language) params.set("language", language);
+  for (const language of languages) params.append("language", language);
 
   const response = await fetch(`/api/projects?${params.toString()}`);
   if (!response.ok) throw new Error("Failed to load projects");
@@ -113,21 +114,38 @@ function MetricBar({ label, value }: { label: string; value: number }) {
   );
 }
 
-export function ProjectCard({ repo }: { repo: ProjectRepo }) {
+function GitHubMark({ className }: { className?: string }) {
   return (
-    <Card className="flex min-h-[296px] flex-col transition-colors hover:border-zinc-700">
-      <CardHeader>
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="currentColor">
+      <path d="M12 2C6.48 2 2 6.58 2 12.24c0 4.52 2.87 8.35 6.84 9.71.5.1.68-.22.68-.49 0-.24-.01-1.04-.01-1.89-2.78.62-3.37-1.22-3.37-1.22-.45-1.19-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.35 1.12 2.92.85.09-.66.35-1.12.63-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05A9.35 9.35 0 0 1 12 6.95c.85 0 1.7.12 2.5.34 1.9-1.33 2.74-1.05 2.74-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.8 0 .27.18.59.69.49A10.07 10.07 0 0 0 22 12.24C22 6.58 17.52 2 12 2Z" />
+    </svg>
+  );
+}
+
+export function ProjectCard({ project }: { project: ProjectSummary }) {
+  const logoUrl = `https://github.com/${project.owner}.png`;
+
+  return (
+    <Card className="flex min-h-[278px] flex-col transition-colors hover:border-zinc-700">
+      <CardHeader className="pb-4">
         <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="truncate text-xs font-bold text-zinc-500">{repo.owner}</p>
-            <CardTitle className="mt-1 truncate">{repo.fullName}</CardTitle>
+          <div className="flex min-w-0 items-start gap-3">
+            <div
+              className="h-11 w-11 shrink-0 rounded-sm border border-zinc-800 bg-zinc-900 bg-cover bg-center"
+              style={{ backgroundImage: `url(${logoUrl})` }}
+              aria-label={`${project.owner} logo`}
+            />
+            <div className="min-w-0">
+              <p className="truncate text-xs font-bold text-zinc-500">{project.owner}</p>
+              <CardTitle className="mt-0.5 truncate text-lg leading-6">{project.fullName}</CardTitle>
+            </div>
           </div>
-          <Badge variant={repo.openIssueCount > 0 ? "success" : "secondary"}>
-            {repo.openIssueCount} open
+          <Badge variant={project.openIssueCount > 0 ? "success" : "secondary"}>
+            {project.openIssueCount} open
           </Badge>
         </div>
         <CardDescription className="line-clamp-2">
-          {repo.description || "Curated repository in the ContribIQ catalog."}
+          {project.description || "Curated project in the ContribIQ catalog."}
         </CardDescription>
       </CardHeader>
 
@@ -136,34 +154,34 @@ export function ProjectCard({ repo }: { repo: ProjectRepo }) {
           <div className="rounded-sm border border-zinc-900 bg-zinc-950 p-3">
             <div className="flex items-center gap-1 text-xs font-bold text-zinc-300">
               <Star className="h-3.5 w-3.5 text-amber-300" />
-              {formatStars(repo.stars)}
+              {formatStars(project.stars)}
             </div>
             <p className="mt-1 text-[11px] font-medium text-zinc-600">Stars</p>
           </div>
           <div className="rounded-sm border border-zinc-900 bg-zinc-950 p-3">
             <div className="flex items-center gap-1 text-xs font-bold text-zinc-300">
               <GitFork className="h-3.5 w-3.5 text-emerald-300" />
-              {repo.classifiedIssueCount}
+              {project.classifiedIssueCount}
             </div>
             <p className="mt-1 text-[11px] font-medium text-zinc-600">Ready</p>
           </div>
           <div className="rounded-sm border border-zinc-900 bg-zinc-950 p-3">
             <div className="flex items-center gap-1 text-xs font-bold text-zinc-300">
               <Activity className="h-3.5 w-3.5 text-sky-300" />
-              {percent(repo.healthScore)}
+              {percent(project.healthScore)}
             </div>
             <p className="mt-1 text-[11px] font-medium text-zinc-600">Health</p>
           </div>
         </div>
 
         <div className="space-y-3">
-          <MetricBar label="Maintainers" value={repo.maintainerScore} />
-          <MetricBar label="Activity" value={repo.activityScore} />
+          <MetricBar label="Maintainers" value={project.maintainerScore} />
+          <MetricBar label="Activity" value={project.activityScore} />
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {repo.language && <Badge variant="outline">{repo.language}</Badge>}
-          {repo.categories.slice(0, 3).map((category) => (
+          {project.language && <Badge variant="outline">{project.language}</Badge>}
+          {project.categories.slice(0, 3).map((category) => (
             <Badge key={category} variant="secondary">
               {titleCase(category)}
             </Badge>
@@ -173,20 +191,20 @@ export function ProjectCard({ repo }: { repo: ProjectRepo }) {
 
       <CardFooter className="justify-between border-t border-zinc-900 pt-4">
         <Link
-          href={`/projects/${repo.id}`}
-          className="inline-flex h-9 items-center justify-center rounded-sm bg-emerald-500 px-3 text-xs font-bold text-zinc-950 transition-colors hover:bg-emerald-400"
+          href={`/projects/${project.id}`}
+          className="inline-flex h-9 items-center justify-center rounded-sm bg-emerald-500 px-4 text-xs font-bold text-zinc-950 transition-colors hover:bg-emerald-400"
         >
           View project
         </Link>
         <a
-          href={`https://github.com/${repo.fullName}`}
+          href={`https://github.com/${project.fullName}`}
           target="_blank"
           rel="noreferrer"
           className="inline-flex h-9 w-9 items-center justify-center rounded-sm border border-zinc-800 bg-zinc-950 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-white"
-          aria-label={`Open ${repo.fullName} on GitHub`}
+          aria-label={`Open ${project.fullName} on GitHub`}
           title="Open on GitHub"
         >
-          <ExternalLink className="h-4 w-4" />
+          <GitHubMark className="h-4 w-4" />
         </a>
       </CardFooter>
     </Card>
@@ -196,17 +214,18 @@ export function ProjectCard({ repo }: { repo: ProjectRepo }) {
 export function ProjectsCatalogPage() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
-  const [language, setLanguage] = useState("");
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
   const [sort, setSort] = useState<ProjectSort>("activity");
   const [page, setPage] = useState(1);
 
   const projectsQuery = useQuery({
-    queryKey: ["projects", { search, category, language, sort, page }],
-    queryFn: () => fetchProjects({ search, category, language, sort, page }),
+    queryKey: ["projects", { search, category, selectedLanguages, sort, page }],
+    queryFn: () => fetchProjects({ search, category, languages: selectedLanguages, sort, page }),
+    placeholderData: keepPreviousData,
   });
 
-  const repos = projectsQuery.data?.repos ?? [];
-  const languages = projectsQuery.data?.filters.languages ?? [];
+  const projects = projectsQuery.data?.projects ?? [];
+  const languageOptions = projectsQuery.data?.filters.languages ?? [];
   const categoryOptions = projectsQuery.data?.filters.categories.slice(0, 12) ?? [];
 
   return (
@@ -226,7 +245,7 @@ export function ProjectsCatalogPage() {
           <div className="grid grid-cols-2 gap-2 sm:w-64">
             <Card className="p-3">
               <p className="text-xl font-bold text-zinc-100">{projectsQuery.data?.total ?? 0}</p>
-              <p className="text-[11px] font-medium text-zinc-500">Visible repos</p>
+              <p className="text-[11px] font-medium text-zinc-500">Visible projects</p>
             </Card>
             <Card className="p-3">
               <p className="text-xl font-bold text-zinc-100">
@@ -238,7 +257,7 @@ export function ProjectsCatalogPage() {
         </div>
 
         <Card className="p-4">
-          <div className="grid gap-3 xl:grid-cols-[1fr_auto_auto_auto] xl:items-center">
+          <div className="grid gap-3 xl:grid-cols-[1fr_auto_auto_auto_auto] xl:items-end">
             <label className="relative block">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-600" />
               <input
@@ -252,47 +271,52 @@ export function ProjectsCatalogPage() {
               />
             </label>
 
-            <select
-              value={language}
-              onChange={(event) => {
-                setLanguage(event.target.value);
+            <DashboardFilterSelect
+              value={category}
+              onChange={(value) => {
+                setCategory(value);
                 setPage(1);
               }}
-              className="h-10 rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-sm font-bold text-zinc-300 outline-none transition-colors hover:border-zinc-700"
-              aria-label="Filter by language"
-            >
-              <option value="">All languages</option>
-              {languages.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: "", label: "All stacks" },
+                ...categoryOptions.map((item) => ({ value: item, label: titleCase(item) })),
+              ]}
+              minWidthClassName="min-w-44"
+            />
 
-            <select
+            <DashboardMultiSelect
+              value={selectedLanguages}
+              onChange={(value) => {
+                setSelectedLanguages(value);
+                setPage(1);
+              }}
+              options={languageOptions}
+              placeholder="All languages"
+              searchPlaceholder="Search language"
+              minWidthClassName="min-w-44"
+            />
+
+            <DashboardFilterSelect<ProjectSort>
               value={sort}
-              onChange={(event) => {
-                setSort(event.target.value as ProjectSort);
+              onChange={(value) => {
+                setSort((value || "activity") as ProjectSort);
                 setPage(1);
               }}
-              className="h-10 rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-sm font-bold text-zinc-300 outline-none transition-colors hover:border-zinc-700"
-              aria-label="Sort projects"
-            >
-              {(Object.entries(SORT_LABELS) as Array<[ProjectSort, string]>).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
+              options={(Object.entries(SORT_LABELS) as Array<[ProjectSort, string]>).map(([value, label]) => ({
+                value,
+                label,
+              }))}
+              minWidthClassName="min-w-40"
+            />
 
-            {(search || category || language || sort !== "activity") && (
+            {(search || category || selectedLanguages.length > 0 || sort !== "activity") && (
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => {
                   setSearch("");
                   setCategory("");
-                  setLanguage("");
+                  setSelectedLanguages([]);
                   setSort("activity");
                   setPage(1);
                 }}
@@ -300,40 +324,6 @@ export function ProjectsCatalogPage() {
                 Reset
               </Button>
             )}
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setCategory("");
-                setPage(1);
-              }}
-              className={`rounded-sm border px-3 py-1.5 text-xs font-bold transition-colors ${
-                !category
-                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                  : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white"
-              }`}
-            >
-              All stacks
-            </button>
-            {categoryOptions.map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => {
-                  setCategory(item);
-                  setPage(1);
-                }}
-                className={`rounded-sm border px-3 py-1.5 text-xs font-bold transition-colors ${
-                  category === item
-                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                    : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white"
-                }`}
-              >
-                {titleCase(item)}
-              </button>
-            ))}
           </div>
         </Card>
 
@@ -347,22 +337,22 @@ export function ProjectsCatalogPage() {
           <Card className="p-8 text-center text-sm font-medium text-red-300">
             Projects could not be loaded.
           </Card>
-        ) : repos.length === 0 ? (
+        ) : projects.length === 0 ? (
           <Card className="p-10 text-center">
-            <h2 className="text-lg font-bold text-zinc-100">No repositories found</h2>
+            <h2 className="text-lg font-bold text-zinc-100">No projects found</h2>
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-zinc-500">
               Try a different search or filter combination.
             </p>
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {repos.map((repo) => (
-              <ProjectCard key={repo.id} repo={repo} />
+            {projects.map((project) => (
+              <ProjectCard key={project.id} project={project} />
             ))}
           </div>
         )}
 
-        {!projectsQuery.isLoading && !projectsQuery.isError && repos.length > 0 && (
+        {!projectsQuery.isLoading && !projectsQuery.isError && projects.length > 0 && (
           <div className="flex flex-col gap-3 border-t border-zinc-900 pt-5 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm font-medium text-zinc-500">
               Page {projectsQuery.data?.page ?? page} of {projectsQuery.data?.totalPages ?? 1}

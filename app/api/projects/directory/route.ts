@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCachedJson, setCachedJson } from "@/lib/cache";
 import { prisma } from "@/lib/prisma";
+import { getRepoLanguageCatalog } from "@/lib/repo-language-cache";
 
 export const dynamic = "force-dynamic";
 
 const querySchema = z.object({
-  language: z.string().trim().max(40).optional(),
+  languages: z.array(z.string().trim().min(1).max(40)).max(50).default([]),
   difficulty: z.enum(["beginner", "intermediate", "advanced"]).optional(),
   minResponsiveness: z.coerce.number().min(0).max(1).optional(),
   sort: z.enum(["stars", "activityScore", "maintainerScore"]).default("activityScore"),
@@ -18,8 +19,14 @@ function healthScore(repo: { maintainerScore: number; activityScore: number }) {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
+  const languageParams = [
+    ...searchParams.getAll("language"),
+    ...(searchParams.get("languages")?.split(",") ?? []),
+  ]
+    .map((language) => language.trim())
+    .filter(Boolean);
   const parsed = querySchema.safeParse({
-    language: searchParams.get("language") || undefined,
+    languages: [...new Set(languageParams)],
     difficulty: searchParams.get("difficulty") || undefined,
     minResponsiveness: searchParams.get("minResponsiveness") || undefined,
     sort: searchParams.get("sort") || undefined,
@@ -29,14 +36,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: z.treeifyError(parsed.error) }, { status: 400 });
   }
 
-  const { language, difficulty, minResponsiveness, sort } = parsed.data;
-  const cacheKey = `repos:v1:${language ?? "all"}:${difficulty ?? "all"}:${minResponsiveness ?? "all"}:${sort}`;
-  const cached = await getCachedJson<unknown>(cacheKey, "repos");
+  const { languages: selectedLanguages, difficulty, minResponsiveness, sort } = parsed.data;
+  const languageCacheKey = selectedLanguages.length > 0 ? selectedLanguages.sort().join(",") : "all";
+  const cacheKey = `projects:directory:v1:${languageCacheKey}:${difficulty ?? "all"}:${minResponsiveness ?? "all"}:${sort}`;
+  const cached = await getCachedJson<unknown>(cacheKey, "projects-directory");
   if (cached) return NextResponse.json(cached);
 
   const repos = await prisma.repo.findMany({
     where: {
-      ...(language ? { language: { equals: language, mode: "insensitive" as const } } : {}),
+      ...(selectedLanguages.length > 0
+        ? { language: { in: selectedLanguages, mode: "insensitive" as const } }
+        : {}),
       ...(minResponsiveness !== undefined
         ? { maintainerScore: { gte: minResponsiveness } }
         : {}),
@@ -73,12 +83,7 @@ export async function GET(request: Request) {
       where: { repoId: { in: repoIds }, state: "open", classified: true },
       _count: true,
     }),
-    prisma.repo.findMany({
-      where: { language: { not: null } },
-      distinct: ["language"],
-      orderBy: { language: "asc" },
-      select: { language: true },
-    }),
+    getRepoLanguageCatalog(),
     prisma.repo.findMany({
       orderBy: { createdAt: "desc" },
       take: 6,
@@ -112,30 +117,30 @@ export async function GET(request: Request) {
     difficultyByRepo.set(row.repoId, current);
   }
 
-  const payload = {
-    repos: repos.map((repo) => {
-      const difficultyCounts =
-        difficultyByRepo.get(repo.id) ?? { beginner: 0, intermediate: 0, advanced: 0 };
-      const classifiedIssueCount = Object.values(difficultyCounts).reduce(
-        (sum, value) => sum + value,
-        0
-      );
+  const projects = repos.map((repo) => {
+    const difficultyCounts =
+      difficultyByRepo.get(repo.id) ?? { beginner: 0, intermediate: 0, advanced: 0 };
+    const classifiedIssueCount = Object.values(difficultyCounts).reduce(
+      (sum, value) => sum + value,
+      0
+    );
 
-      return {
-        ...repo,
-        openIssueCount: repo._count.issues,
-        classifiedIssueCount,
-        difficultyCounts,
-        healthScore: healthScore(repo),
-        _count: undefined,
-      };
-    }),
+    return {
+      ...repo,
+      openIssueCount: repo._count.issues,
+      classifiedIssueCount,
+      difficultyCounts,
+      healthScore: healthScore(repo),
+      _count: undefined,
+    };
+  });
+
+  const payload = {
+    projects,
     filters: {
-      languages: languages
-        .map((repo) => repo.language)
-        .filter((value): value is string => Boolean(value)),
+      languages,
     },
-    recentRepos: recentRepos.map((repo) => ({
+    recentProjects: recentRepos.map((repo) => ({
       ...repo,
       openIssueCount: repo._count.issues,
       classifiedIssueCount: 0,
@@ -145,6 +150,6 @@ export async function GET(request: Request) {
     })),
   };
 
-  await setCachedJson(cacheKey, payload, 60 * 60, "repos");
+  await setCachedJson(cacheKey, payload, 60 * 60, "projects-directory");
   return NextResponse.json(payload);
 }

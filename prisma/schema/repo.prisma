@@ -19,6 +19,10 @@ model Repo {
   issues Issue[]
   docs   RepoDoc[]
 
+  @@index([language])
+  @@index([activityScore])
+  @@index([maintainerScore])
+  @@index([stars])
   @@map("repos")
 }
 
