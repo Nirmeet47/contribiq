@@ -99,6 +99,7 @@ const KNOWN_LANGUAGES = new Set([
   "lua",
   "r",
   "julia",
+  "jupyter notebook",
   "zig",
   "nim",
   "ocaml",

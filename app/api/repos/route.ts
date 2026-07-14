@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCachedJson, setCachedJson } from "@/lib/cache";
 import { prisma } from "@/lib/prisma";
+import { getRepoLanguageCatalog } from "@/lib/repo-language-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -82,12 +83,7 @@ export async function GET(request: Request) {
       where: { repoId: { in: repoIds }, state: "open", classified: true },
       _count: true,
     }),
-    prisma.repo.findMany({
-      where: { language: { not: null } },
-      distinct: ["language"],
-      orderBy: { language: "asc" },
-      select: { language: true },
-    }),
+    getRepoLanguageCatalog(),
     prisma.repo.findMany({
       orderBy: { createdAt: "desc" },
       take: 6,
@@ -140,9 +136,7 @@ export async function GET(request: Request) {
       };
     }),
     filters: {
-      languages: languages
-        .map((repo) => repo.language)
-        .filter((value): value is string => Boolean(value)),
+      languages,
     },
     recentRepos: recentRepos.map((repo) => ({
       ...repo,

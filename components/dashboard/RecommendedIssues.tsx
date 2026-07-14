@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Clock,
   GitPullRequest,
-  RotateCw,
   ThumbsDown,
 } from "lucide-react";
 import Link from "next/link";
@@ -289,50 +288,24 @@ function buildMatchReasons(match: FeedMatch, userSkills: UserSkill[]) {
 function FeedRecoveryState({
   title,
   detail,
-  onRefresh,
-  onClearFilters,
-  showClearFilters,
-  isRefreshing,
 }: {
   title: string;
   detail: string;
-  onRefresh: () => void;
-  onClearFilters: () => void;
-  showClearFilters: boolean;
-  isRefreshing: boolean;
 }) {
   return (
     <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-8 text-center">
       <h3 className="text-base font-bold text-zinc-100">{title}</h3>
       <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-zinc-500">{detail}</p>
-      <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-        {showClearFilters && (
-          <button
-            type="button"
-            onClick={onClearFilters}
-            className="inline-flex h-9 items-center justify-center rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-xs font-bold text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white"
-          >
-            Broaden filters
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={isRefreshing}
-          className="inline-flex h-9 items-center justify-center gap-2 rounded-sm border border-emerald-500/30 bg-emerald-500/10 px-3 text-xs font-bold text-emerald-300 transition-colors hover:border-emerald-400/50 hover:bg-emerald-500/15 disabled:opacity-50"
-        >
-          <RotateCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
-          Refresh matches
-        </button>
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
         <Link
           href="/skills"
-          className="inline-flex h-9 items-center justify-center rounded-sm bg-emerald-500 px-3 text-xs font-bold text-zinc-950 transition-colors hover:bg-emerald-400"
+          className="inline-flex h-11 items-center justify-center rounded-sm bg-emerald-500 px-5 text-sm font-bold text-zinc-950 transition-colors hover:bg-emerald-400"
         >
           Update skills
         </Link>
         <Link
           href="/settings"
-          className="inline-flex h-9 items-center justify-center rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-xs font-bold text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white"
+          className="inline-flex h-11 items-center justify-center rounded-sm border border-zinc-800 bg-zinc-900 px-5 text-sm font-bold text-zinc-200 transition-colors hover:border-zinc-700 hover:text-white"
         >
           Preferences
         </Link>
@@ -579,12 +552,6 @@ export function RecommendedIssues() {
     feedQuery.data?.matches.filter((match) => !dismissedIssueIds.has(match.issue.id)) ?? [];
   const hasActiveFilters = Boolean(difficulty || issueType || languages.length > 0);
 
-  function clearFilters() {
-    setDifficulty(undefined);
-    setIssueType(undefined);
-    setLanguages([]);
-  }
-
   return (
     <section className="space-y-3 pb-8">
       <div>
@@ -651,10 +618,6 @@ export function RecommendedIssues() {
         <FeedRecoveryState
           title="Feed could not be loaded"
           detail="The matcher or cache may be temporarily unavailable. Refresh the feed, or adjust your skills and preferences if this keeps happening."
-          onRefresh={() => feedQuery.refetch()}
-          onClearFilters={clearFilters}
-          showClearFilters={hasActiveFilters}
-          isRefreshing={feedQuery.isFetching}
         />
       )}
 
@@ -668,10 +631,6 @@ export function RecommendedIssues() {
                 ? "Your current filters may be too narrow. Broaden them or refresh after updating your skills."
                 : "Update your skills, check preferences, or refresh after more issues are classified and rescored."
           }
-          onRefresh={() => feedQuery.refetch()}
-          onClearFilters={clearFilters}
-          showClearFilters={hasActiveFilters}
-          isRefreshing={feedQuery.isFetching}
         />
       )}
 
@@ -679,10 +638,6 @@ export function RecommendedIssues() {
         <FeedRecoveryState
           title="No visible recommendations left"
           detail="You have dismissed or started every issue in this view. Refresh the feed or broaden the filters to bring more options back."
-          onRefresh={() => feedQuery.refetch()}
-          onClearFilters={clearFilters}
-          showClearFilters={hasActiveFilters}
-          isRefreshing={feedQuery.isFetching}
         />
       )}
 

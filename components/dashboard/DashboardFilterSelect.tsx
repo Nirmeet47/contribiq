@@ -1,6 +1,6 @@
 "use client";
 
-import type { MouseEvent } from "react";
+import type { MouseEvent, RefObject } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Search, X } from "lucide-react";
 
@@ -8,6 +8,40 @@ export type DashboardFilterOption<T extends string> = {
   value: T | "";
   label: string;
 };
+
+function useDismissibleDetails(id: string, detailsRef: RefObject<HTMLDetailsElement | null>) {
+  useEffect(() => {
+    function closeOtherDropdowns(event: Event) {
+      const current = event as CustomEvent<string>;
+      if (current.detail !== id) detailsRef.current?.removeAttribute("open");
+    }
+
+    function closeOnOutsidePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (detailsRef.current?.contains(target)) return;
+
+      detailsRef.current?.removeAttribute("open");
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+
+      detailsRef.current?.removeAttribute("open");
+      detailsRef.current?.querySelector("summary")?.blur();
+    }
+
+    window.addEventListener("dashboard-filter-open", closeOtherDropdowns);
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown, true);
+    document.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      window.removeEventListener("dashboard-filter-open", closeOtherDropdowns);
+      document.removeEventListener("pointerdown", closeOnOutsidePointerDown, true);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [detailsRef, id]);
+}
 
 export function DashboardFilterSelect<T extends string>({
   label,
@@ -25,16 +59,7 @@ export function DashboardFilterSelect<T extends string>({
   const id = useId();
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const selectedOption = options.find((option) => option.value === value) ?? options[0];
-
-  useEffect(() => {
-    function closeOtherDropdowns(event: Event) {
-      const current = event as CustomEvent<string>;
-      if (current.detail !== id) detailsRef.current?.removeAttribute("open");
-    }
-
-    window.addEventListener("dashboard-filter-open", closeOtherDropdowns);
-    return () => window.removeEventListener("dashboard-filter-open", closeOtherDropdowns);
-  }, [id]);
+  useDismissibleDetails(id, detailsRef);
 
   function selectOption(nextValue: T | "", event: MouseEvent<HTMLButtonElement>) {
     onChange(nextValue);
@@ -111,16 +136,7 @@ export function DashboardMultiSelect({
   }, [options, search]);
   const buttonLabel =
     value.length === 0 ? placeholder : value.length === 1 ? value[0] : `${value.length} languages`;
-
-  useEffect(() => {
-    function closeOtherDropdowns(event: Event) {
-      const current = event as CustomEvent<string>;
-      if (current.detail !== id) detailsRef.current?.removeAttribute("open");
-    }
-
-    window.addEventListener("dashboard-filter-open", closeOtherDropdowns);
-    return () => window.removeEventListener("dashboard-filter-open", closeOtherDropdowns);
-  }, [id]);
+  useDismissibleDetails(id, detailsRef);
 
   function toggleOption(option: string) {
     if (selectedSet.has(option)) {

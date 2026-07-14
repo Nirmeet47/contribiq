@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { appConfig } from "@/lib/app-config";
-import { invalidateAllFeedCaches } from "@/lib/feed-cache";
+import { getCachedJson, setCachedJson } from "@/lib/cache";
+import {
+  FEED_CACHE_TTL_SECONDS,
+  FEED_CACHE_VERSION,
+  invalidateAllFeedCaches,
+} from "@/lib/feed-cache";
 import { getAppGitHubToken } from "@/lib/github-token";
 import { prisma } from "@/lib/prisma";
+import { skillIdentity } from "@/lib/skills";
 import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -39,28 +45,6 @@ type GitHubIssueResponse = {
   html_url?: string;
 };
 
-async function getCachedPayload(cacheKey: string) {
-  try {
-    const { redis } = await import("@/lib/redis");
-    const cached = await redis.get(cacheKey);
-    if (!cached) return null;
-
-    return JSON.parse(cached) as unknown;
-  } catch (error) {
-    console.error("[feed] Failed to read feed cache", { cacheKey, error });
-    return null;
-  }
-}
-
-async function setCachedPayload(cacheKey: string, payload: unknown) {
-  try {
-    const { redis } = await import("@/lib/redis");
-    await redis.set(cacheKey, JSON.stringify(payload), "EX", 300);
-  } catch (error) {
-    console.error("[feed] Failed to write feed cache", { cacheKey, error });
-  }
-}
-
 async function deleteIssueCaches(issueId: string, repoId: string) {
   try {
     const { redis } = await import("@/lib/redis");
@@ -73,19 +57,6 @@ async function deleteIssueCaches(issueId: string, repoId: string) {
       error,
     });
   }
-}
-
-async function getCatalogLanguages() {
-  const languages = await prisma.repo.findMany({
-    where: { language: { not: null } },
-    distinct: ["language"],
-    orderBy: { language: "asc" },
-    select: { language: true },
-  });
-
-  return languages
-    .map((repo) => repo.language)
-    .filter((value): value is string => Boolean(value));
 }
 
 async function getDbUser() {
@@ -102,8 +73,32 @@ async function getDbUser() {
 
   return prisma.user.findUnique({
     where: { githubId: parseInt(githubIdStr, 10) },
-    select: { id: true, interests: true, timeCommitment: true },
+    select: {
+      id: true,
+      interests: true,
+      timeCommitment: true,
+      skillProfile: {
+        select: {
+          skills: {
+            where: { isLanguage: true },
+            orderBy: { name: "asc" },
+            select: { name: true },
+          },
+        },
+      },
+    },
   });
+}
+
+function getUserLanguageOptions(dbUser: Awaited<ReturnType<typeof getDbUser>>) {
+  const languages = dbUser?.skillProfile?.skills.map((skill) => skill.name) ?? [];
+  const byIdentity = new Map<string, string>();
+
+  for (const language of languages) {
+    byIdentity.set(skillIdentity(language), language);
+  }
+
+  return [...byIdentity.values()].sort((a, b) => a.localeCompare(b));
 }
 
 function issueNumberFromUrl(url: string) {
@@ -221,19 +216,19 @@ export async function GET(request: Request) {
 
   const { difficulty, issueType, languages, sort } = parsed.data;
   const languageCacheKey = languages.length > 0 ? languages.sort().join(",") : "all";
-  const cacheKey = `feed:v4:${dbUser.id}:${difficulty ?? "all"}:${issueType ?? "all"}:${languageCacheKey}:${sort}:${appConfig.feedMinScore}:${appConfig.feedSkillOnlyMinScore}`;
-  const cached = await getCachedPayload(cacheKey);
+  const cacheKey = `feed:${FEED_CACHE_VERSION}:${dbUser.id}:${difficulty ?? "all"}:${issueType ?? "all"}:${languageCacheKey}:${sort}:${appConfig.feedMinScore}:${appConfig.feedSkillOnlyMinScore}`;
+  const cached = await getCachedJson<unknown>(cacheKey, "feed");
 
   if (cached) {
     return NextResponse.json(cached);
   }
 
-  const catalogLanguages = await getCatalogLanguages();
+  const userLanguageOptions = getUserLanguageOptions(dbUser);
 
   if ((dbUser.interests?.length ?? 0) === 0 || dbUser.timeCommitment <= 0) {
     return NextResponse.json({
       matches: [],
-      filters: { languages: catalogLanguages },
+      filters: { languages: userLanguageOptions },
       reason: "profile_incomplete",
     });
   }
@@ -310,7 +305,7 @@ export async function GET(request: Request) {
 
   const payload = {
     filters: {
-      languages: catalogLanguages,
+      languages: userLanguageOptions,
     },
     matches: visibleMatches.map((match) => ({
       id: match.id,
@@ -342,7 +337,7 @@ export async function GET(request: Request) {
     })),
   };
 
-  await setCachedPayload(cacheKey, payload);
+  await setCachedJson(cacheKey, payload, FEED_CACHE_TTL_SECONDS, "feed");
 
   return NextResponse.json(payload);
 }
