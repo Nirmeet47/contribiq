@@ -87,6 +87,15 @@ function getUserLanguageOptions(dbUser: Awaited<ReturnType<typeof getDbUser>>) {
   return [...byIdentity.values()].sort((a, b) => a.localeCompare(b));
 }
 
+async function getLastMatchedAt(userId: string) {
+  const aggregate = await prisma.issueMatch.aggregate({
+    where: { userId },
+    _max: { updatedAt: true },
+  });
+
+  return aggregate._max.updatedAt?.toISOString() ?? null;
+}
+
 function issueNumberFromUrl(url: string) {
   const match = url.match(/\/issues\/(\d+)(?:[#?].*)?$/);
   return match ? Number(match[1]) : null;
@@ -210,11 +219,13 @@ export async function GET(request: Request) {
   }
 
   const userLanguageOptions = getUserLanguageOptions(dbUser);
+  const lastMatchedAt = await getLastMatchedAt(dbUser.id);
 
   if ((dbUser.interests?.length ?? 0) === 0 || dbUser.timeCommitment <= 0) {
     return NextResponse.json({
       matches: [],
       filters: { languages: userLanguageOptions },
+      status: { lastMatchedAt },
       reason: "profile_incomplete",
     });
   }
@@ -292,6 +303,9 @@ export async function GET(request: Request) {
   const payload = {
     filters: {
       languages: userLanguageOptions,
+    },
+    status: {
+      lastMatchedAt,
     },
     matches: visibleMatches.map((match) => ({
       id: match.id,

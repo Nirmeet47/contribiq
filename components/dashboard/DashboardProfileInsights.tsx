@@ -148,7 +148,7 @@ export function DashboardProfileInsights() {
               </p>
             </div>
             <Link
-              href="/settings"
+              href="/preferences"
               className="inline-flex items-center gap-2 rounded-sm bg-emerald-500 px-3 py-2 text-sm font-bold text-zinc-950 transition-colors hover:bg-emerald-400"
             >
               Edit
