@@ -2,9 +2,6 @@ import type { Dispatch, SetStateAction } from "react";
 import { useRef, useState } from "react";
 import {
   ArrowRight,
-  Code2,
-  FolderGit2,
-  GitPullRequest,
   GripVertical,
   Loader2,
   Pencil,
@@ -57,14 +54,12 @@ type Skill = {
 export function DashboardSkillReview({
   skills,
   setSkills,
-  summary,
   saving,
   onSave,
   onContinue,
 }: {
   skills: Skill[];
   setSkills: Dispatch<SetStateAction<Skill[]>>;
-  summary: { totalCommits: number; totalRepos: number; mergedPRs: number };
   saving: boolean;
   onSave: () => Promise<void>;
   onContinue: () => void;
@@ -129,22 +124,6 @@ export function DashboardSkillReview({
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editMode ? <Save className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
               {editMode ? "Save Changes" : "Edit Skills"}
             </button>
-          </div>
-          <div className="flex flex-wrap items-center gap-4 text-sm font-medium text-zinc-400">
-            <span className="flex items-center gap-1.5">
-              <Code2 className="h-4 w-4 text-zinc-500" />
-              {summary.totalCommits.toLocaleString()} commits
-            </span>
-            <span className="flex items-center gap-1.5">
-              <FolderGit2 className="h-4 w-4 text-zinc-500" />
-              {summary.totalRepos} repos
-            </span>
-            {summary.mergedPRs > 0 && (
-              <span className="flex items-center gap-1.5">
-                <GitPullRequest className="h-4 w-4 text-zinc-500" />
-                {summary.mergedPRs} merged PRs
-              </span>
-            )}
           </div>
         </div>
 
