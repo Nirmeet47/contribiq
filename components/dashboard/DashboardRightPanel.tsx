@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { DashboardStats } from "./DashboardStats";
 import { SkillRadar, type SkillLevel } from "./SkillRadar";
 import { TrendingInStack } from "./TrendingInStack";
+import { apiGet } from "@/lib/api-client";
 
 type Skill = {
   id?: string;
@@ -38,21 +39,18 @@ type ContributionStatsResponse = {
 };
 
 async function fetchMe() {
-  const response = await fetch("/api/me");
-  if (!response.ok) throw new Error("Failed to load profile");
-  return (await response.json()) as MeResponse;
+  return apiGet<MeResponse>("/api/me", "Failed to load profile");
 }
 
 async function fetchBookmarks() {
-  const response = await fetch("/api/bookmarks");
-  if (!response.ok) throw new Error("Failed to load bookmarks");
-  return (await response.json()) as BookmarksResponse;
+  return apiGet<BookmarksResponse>("/api/bookmarks", "Failed to load bookmarks");
 }
 
 async function fetchContributionStats() {
-  const response = await fetch("/api/contributions/stats");
-  if (!response.ok) throw new Error("Failed to load contribution stats");
-  return (await response.json()) as ContributionStatsResponse;
+  return apiGet<ContributionStatsResponse>(
+    "/api/contributions/stats",
+    "Failed to load contribution stats"
+  );
 }
 
 export function DashboardRightPanel() {

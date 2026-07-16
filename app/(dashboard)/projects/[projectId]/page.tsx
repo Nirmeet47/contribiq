@@ -33,7 +33,7 @@ type ProjectIssue = {
 };
 
 type ProjectResponse = {
-  repo: {
+  project: {
     id: string;
     owner: string;
     name: string;
@@ -71,18 +71,18 @@ function percent(value: number) {
   return Math.round(Math.max(0, Math.min(1, value)) * 100);
 }
 
-async function fetchProject(repoId: string) {
-  const response = await fetch(`/api/projects/${repoId}`);
+async function fetchProject(projectId: string) {
+  const response = await fetch(`/api/projects/${projectId}`);
   if (!response.ok) throw new Error("Failed to load project");
   return (await response.json()) as ProjectResponse;
 }
 
 async function streamProjectAnswer(
-  repoId: string,
+  projectId: string,
   query: string,
   onToken: (token: string) => void
 ) {
-  const response = await fetch(`/api/projects/${repoId}/ask`, {
+  const response = await fetch(`/api/projects/${projectId}/ask`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query }),
@@ -175,17 +175,17 @@ function IssueCard({ issue }: { issue: ProjectIssue }) {
 export default function ProjectPage({
   params,
 }: {
-  params: Promise<{ repoId: string }>;
+  params: Promise<{ projectId: string }>;
 }) {
-  const { repoId } = use(params);
+  const { projectId } = use(params);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [isAsking, setIsAsking] = useState(false);
   const [askError, setAskError] = useState(false);
 
   const projectQuery = useQuery({
-    queryKey: ["project", repoId],
-    queryFn: () => fetchProject(repoId),
+    queryKey: ["project", projectId],
+    queryFn: () => fetchProject(projectId),
   });
 
   const project = projectQuery.data;
@@ -207,7 +207,7 @@ export default function ProjectPage({
     setAskError(false);
     setIsAsking(true);
     try {
-      await streamProjectAnswer(repoId, trimmed, (token) => {
+      await streamProjectAnswer(projectId, trimmed, (token) => {
         setAnswer((current) => current + token);
       });
     } catch {
@@ -254,13 +254,13 @@ export default function ProjectPage({
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl space-y-3">
               <p className="text-sm font-bold uppercase tracking-widest text-emerald-400">
-                {project.repo.owner}
+                {project.project.owner}
               </p>
               <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl">
-                {project.repo.name}
+                {project.project.name}
               </h1>
               <p className="text-base leading-7 text-zinc-400">
-                {project.repo.description || "No repository description available."}
+                {project.project.description || "No project description available."}
               </p>
             </div>
 
@@ -276,14 +276,14 @@ export default function ProjectPage({
           <div className="flex flex-wrap items-center gap-3">
             <span className="inline-flex items-center gap-1.5 rounded-sm border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-sm font-medium text-zinc-300">
               <Star className="h-4 w-4 text-amber-300" />
-              {project.repo.stars.toLocaleString()}
+              {project.project.stars.toLocaleString()}
             </span>
-            {project.repo.language && (
+            {project.project.language && (
               <span className="rounded-sm border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-sm font-bold text-sky-300">
-                {project.repo.language}
+                {project.project.language}
               </span>
             )}
-            {project.repo.categories.map((category) => (
+            {project.project.categories.map((category) => (
               <span key={category} className="rounded-sm border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-sm font-medium text-zinc-400">
                 {category}
               </span>
@@ -295,11 +295,11 @@ export default function ProjectPage({
           <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-5">
             <h2 className="mb-5 text-lg font-bold text-zinc-100">Project intelligence</h2>
             <div className="space-y-5">
-              <MetricBar label="Activity" value={project.repo.activityScore} />
-              <MetricBar label="Responsiveness" value={project.repo.maintainerScore} />
+              <MetricBar label="Activity" value={project.project.activityScore} />
+              <MetricBar label="Responsiveness" value={project.project.maintainerScore} />
               <MetricBar
                 label="Contribution Friendliness"
-                value={project.repo.contributionFriendliness}
+                value={project.project.contributionFriendliness}
               />
             </div>
 
@@ -378,7 +378,7 @@ export default function ProjectPage({
             <input
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
-              placeholder="Ask a question about this repository..."
+              placeholder="Ask a question about this project..."
               className="min-h-11 flex-1 rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 placeholder:text-zinc-600 outline-none transition-colors focus:border-emerald-500/50"
             />
             <button

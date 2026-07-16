@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { appConfig } from "@/lib/app-config";
+import { getCurrentDbUser } from "@/lib/auth-user";
 import { getCachedJson, setCachedJson } from "@/lib/cache";
 import {
   FEED_CACHE_TTL_SECONDS,
@@ -10,7 +11,6 @@ import {
 import { getAppGitHubToken } from "@/lib/github-token";
 import { prisma } from "@/lib/prisma";
 import { skillIdentity } from "@/lib/skills";
-import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -60,30 +60,16 @@ async function deleteIssueCaches(issueId: string, repoId: string) {
 }
 
 async function getDbUser() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) return null;
-
-  const githubIdStr = user.user_metadata?.provider_id;
-  if (!githubIdStr) return null;
-
-  return prisma.user.findUnique({
-    where: { githubId: parseInt(githubIdStr, 10) },
-    select: {
-      id: true,
-      interests: true,
-      timeCommitment: true,
-      skillProfile: {
-        select: {
-          skills: {
-            where: { isLanguage: true },
-            orderBy: { name: "asc" },
-            select: { name: true },
-          },
+  return getCurrentDbUser({
+    id: true,
+    interests: true,
+    timeCommitment: true,
+    skillProfile: {
+      select: {
+        skills: {
+          where: { isLanguage: true },
+          orderBy: { name: "asc" },
+          select: { name: true },
         },
       },
     },
@@ -99,6 +85,15 @@ function getUserLanguageOptions(dbUser: Awaited<ReturnType<typeof getDbUser>>) {
   }
 
   return [...byIdentity.values()].sort((a, b) => a.localeCompare(b));
+}
+
+async function getLastMatchedAt(userId: string) {
+  const aggregate = await prisma.issueMatch.aggregate({
+    where: { userId },
+    _max: { updatedAt: true },
+  });
+
+  return aggregate._max.updatedAt?.toISOString() ?? null;
 }
 
 function issueNumberFromUrl(url: string) {
@@ -224,11 +219,13 @@ export async function GET(request: Request) {
   }
 
   const userLanguageOptions = getUserLanguageOptions(dbUser);
+  const lastMatchedAt = await getLastMatchedAt(dbUser.id);
 
   if ((dbUser.interests?.length ?? 0) === 0 || dbUser.timeCommitment <= 0) {
     return NextResponse.json({
       matches: [],
       filters: { languages: userLanguageOptions },
+      status: { lastMatchedAt },
       reason: "profile_incomplete",
     });
   }
@@ -306,6 +303,9 @@ export async function GET(request: Request) {
   const payload = {
     filters: {
       languages: userLanguageOptions,
+    },
+    status: {
+      lastMatchedAt,
     },
     matches: visibleMatches.map((match) => ({
       id: match.id,

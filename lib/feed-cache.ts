@@ -1,6 +1,6 @@
 import { redis } from "@/lib/redis";
 
-export const FEED_CACHE_VERSION = "v5";
+export const FEED_CACHE_VERSION = "v6";
 export const FEED_CACHE_TTL_SECONDS = 300;
 
 async function keysByPattern(pattern: string) {

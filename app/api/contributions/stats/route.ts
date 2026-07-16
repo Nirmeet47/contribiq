@@ -1,49 +1,11 @@
 import { NextResponse } from "next/server";
+import { getCurrentDbUser } from "@/lib/auth-user";
+import { getCachedJson, setCachedJson } from "@/lib/cache";
+import { CONTRIBUTION_STATS_CACHE_TTL_SECONDS } from "@/lib/cache-constants";
 import { fetchGitHubContributionStats } from "@/lib/github-contributions";
 import { prisma } from "@/lib/prisma";
-import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
-
-async function getDbUser() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) return null;
-
-  const githubIdStr = user.user_metadata?.provider_id;
-  if (!githubIdStr) return null;
-
-  const dbUser = await prisma.user.findUnique({
-    where: { githubId: parseInt(githubIdStr, 10) },
-    select: { id: true, username: true, githubToken: true },
-  });
-
-  return dbUser ?? null;
-}
-
-async function getCachedPayload<T>(cacheKey: string) {
-  try {
-    const { redis } = await import("@/lib/redis");
-    const cached = await redis.get(cacheKey);
-    return cached ? (JSON.parse(cached) as T) : null;
-  } catch (error) {
-    console.error("[contributions] Failed to read stats cache", { cacheKey, error });
-    return null;
-  }
-}
-
-async function setCachedPayload(cacheKey: string, payload: unknown) {
-  try {
-    const { redis } = await import("@/lib/redis");
-    await redis.set(cacheKey, JSON.stringify(payload), "EX", 300);
-  } catch (error) {
-    console.error("[contributions] Failed to write stats cache", { cacheKey, error });
-  }
-}
 
 function utcDateString(date: Date) {
   return date.toISOString().slice(0, 10);
@@ -104,13 +66,13 @@ function currentDateStreak(dates: string[]) {
 }
 
 export async function GET() {
-  const dbUser = await getDbUser();
+  const dbUser = await getCurrentDbUser({ id: true, username: true, githubToken: true });
   if (!dbUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const cacheKey = `contributions:stats:${dbUser.id}`;
-  const cached = await getCachedPayload(cacheKey);
+  const cached = await getCachedJson<unknown>(cacheKey, "contributions");
   if (cached) {
     return NextResponse.json(cached);
   }
@@ -165,7 +127,12 @@ export async function GET() {
     totalReach,
   };
 
-  await setCachedPayload(cacheKey, payload);
+  await setCachedJson(
+    cacheKey,
+    payload,
+    CONTRIBUTION_STATS_CACHE_TTL_SECONDS,
+    "contributions"
+  );
 
   return NextResponse.json(payload);
 }

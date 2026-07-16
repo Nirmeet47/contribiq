@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { serializeProjectSummary } from "@/lib/project-serializer";
 import { getRepoLanguageCatalog } from "@/lib/repo-language-cache";
 
 export const dynamic = "force-dynamic";
@@ -13,10 +14,6 @@ const projectQuerySchema = z.object({
   sort: z.enum(["activity", "stars", "issues", "health", "name"]).default("activity"),
   page: z.coerce.number().int().min(1).default(1),
 });
-
-function healthScore(repo: { maintainerScore: number; activityScore: number }) {
-  return repo.maintainerScore * 0.55 + repo.activityScore * 0.45;
-}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -98,12 +95,12 @@ export async function GET(request: Request) {
   );
 
   const projects = repos
-    .map((repo) => ({
-      ...repo,
-      openIssueCount: openCountByRepo.get(repo.id) ?? 0,
-      classifiedIssueCount: classifiedCountByRepo.get(repo.id) ?? 0,
-      healthScore: healthScore(repo),
-    }))
+    .map((repo) =>
+      serializeProjectSummary(repo, {
+        openIssueCount: openCountByRepo.get(repo.id) ?? 0,
+        classifiedIssueCount: classifiedCountByRepo.get(repo.id) ?? 0,
+      })
+    )
     .sort((a, b) => {
       if (sort === "stars") return b.stars - a.stars;
       if (sort === "issues") return b.openIssueCount - a.openIssueCount;

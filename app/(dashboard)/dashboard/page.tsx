@@ -65,7 +65,7 @@ export default function DashboardPage() {
 
   const fetchSkills = useCallback(async () => {
     try {
-      const response = await fetch("/api/me/skills");
+      const response = await fetch("/api/skills");
       if (response.status === 401) {
         window.location.href = "/login";
         return;
@@ -200,7 +200,7 @@ export default function DashboardPage() {
   async function handleSaveSkills() {
     setSaving(true);
     try {
-      await fetch("/api/me/skills", {
+      await fetch("/api/skills", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

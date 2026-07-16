@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { DashboardFilterSelect, DashboardMultiSelect } from "@/components/dashboard/DashboardFilterSelect";
+import { apiGet, apiJson } from "@/lib/api-client";
 import { isLanguageSkill, skillIdentity } from "@/lib/skills";
 
 type Difficulty = "beginner" | "intermediate" | "advanced";
@@ -53,6 +54,9 @@ type FeedMatch = {
 type FeedResponse = {
   filters?: {
     languages: string[];
+  };
+  status?: {
+    lastMatchedAt: string | null;
   };
   matches: FeedMatch[];
   reason?: "profile_incomplete";
@@ -111,6 +115,30 @@ const TECH_LOGOS: Record<string, { src: string; invert?: boolean }> = {
 
 function titleCase(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function formatLastMatched(value: string | null | undefined) {
+  if (!value) return "Not matched yet";
+
+  const matchedAt = new Date(value).getTime();
+  if (Number.isNaN(matchedAt)) return "Match status unavailable";
+
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - matchedAt) / 1000));
+  if (diffSeconds < 60) return "Last matched just now";
+
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) return `Last matched ${diffMinutes} min ago`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `Last matched ${diffHours}h ago`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `Last matched ${diffDays}d ago`;
+
+  return `Last matched ${new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+  }).format(new Date(value))}`;
 }
 
 function techLogoFor(name: string) {
@@ -239,15 +267,11 @@ async function fetchFeed({
   if (issueType) params.set("issueType", issueType);
   for (const language of languages) params.append("language", language);
 
-  const response = await fetch(`/api/feed?${params.toString()}`);
-  if (!response.ok) throw new Error("Failed to load feed");
-  return (await response.json()) as FeedResponse;
+  return apiGet<FeedResponse>(`/api/feed?${params.toString()}`, "Failed to load feed");
 }
 
 async function fetchSkills() {
-  const response = await fetch("/api/me/skills");
-  if (!response.ok) throw new Error("Failed to load skills");
-  return (await response.json()) as SkillsResponse;
+  return apiGet<SkillsResponse>("/api/skills", "Failed to load skills");
 }
 
 function buildMatchReasons(match: FeedMatch, userSkills: UserSkill[]) {
@@ -304,7 +328,7 @@ function FeedRecoveryState({
           Update skills
         </Link>
         <Link
-          href="/settings"
+          href="/preferences"
           className="inline-flex h-11 items-center justify-center rounded-sm border border-zinc-800 bg-zinc-900 px-5 text-sm font-bold text-zinc-200 transition-colors hover:border-zinc-700 hover:text-white"
         >
           Preferences
@@ -335,12 +359,11 @@ function RecommendedIssueCard({
 
   const bookmarkMutation = useMutation({
     mutationFn: async (nextBookmarked: boolean) => {
-      const response = await fetch("/api/bookmarks", {
+      await apiJson("/api/bookmarks", {
         method: nextBookmarked ? "POST" : "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ issueId: match.issue.id }),
+        body: { issueId: match.issue.id },
+        fallbackMessage: "Failed to update bookmark",
       });
-      if (!response.ok) throw new Error("Failed to update bookmark");
     },
     onMutate: (nextBookmarked) => {
       setBookmarked(nextBookmarked);
@@ -359,12 +382,10 @@ function RecommendedIssueCard({
     mutationFn: async () => {
       if (dismissed) return;
 
-      const response = await fetch("/api/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ issueId: match.issue.id, type: "not_interested" }),
+      await apiJson("/api/feedback", {
+        body: { issueId: match.issue.id, type: "not_interested" },
+        fallbackMessage: "Failed to dismiss issue",
       });
-      if (!response.ok) throw new Error("Failed to dismiss issue");
     },
     onMutate: () => {
       setDismissed(true);
@@ -379,11 +400,9 @@ function RecommendedIssueCard({
 
   const workingMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch(`/api/issues/${match.issue.id}/working`, {
-        method: "POST",
+      return apiJson<{ working: boolean }>(`/api/issues/${match.issue.id}/working`, {
+        fallbackMessage: "Failed to mark issue as working",
       });
-      if (!response.ok) throw new Error("Failed to mark issue as working");
-      return (await response.json()) as { working: boolean };
     },
     onSuccess: (payload) => {
       if (payload.working) {
@@ -551,14 +570,23 @@ export function RecommendedIssues() {
   const visibleMatches =
     feedQuery.data?.matches.filter((match) => !dismissedIssueIds.has(match.issue.id)) ?? [];
   const hasActiveFilters = Boolean(difficulty || issueType || languages.length > 0);
+  const matchStatusLabel = feedQuery.isLoading
+    ? "Checking match status"
+    : formatLastMatched(feedQuery.data?.status?.lastMatchedAt);
 
   return (
     <section className="space-y-3 pb-8">
-      <div>
-        <h2 className="text-3xl font-bold tracking-tight text-white">Matched repos</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
-          Issues ranked from your skills, interests, and contribution history.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight text-white">Matched repos</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
+            Issues ranked from your skills, interests, and contribution history.
+          </p>
+        </div>
+        <div className="inline-flex h-9 w-fit items-center gap-2 rounded-sm border border-emerald-500/20 bg-emerald-500/10 px-3 text-xs font-bold text-emerald-300">
+          <Clock className="h-3.5 w-3.5" />
+          {matchStatusLabel}
+        </div>
       </div>
 
       <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-4">

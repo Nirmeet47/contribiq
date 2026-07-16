@@ -23,6 +23,7 @@ import {
   TestTube2,
   Wrench,
 } from "lucide-react";
+import { apiGet } from "@/lib/api-client";
 
 type SkillLevel = "strong" | "moderate" | "learning";
 
@@ -53,9 +54,7 @@ const INTERESTS = [
 ];
 
 async function fetchMe() {
-  const response = await fetch("/api/me");
-  if (!response.ok) throw new Error("Failed to load profile");
-  return (await response.json()) as MeResponse;
+  return apiGet<MeResponse>("/api/me", "Failed to load profile");
 }
 
 function timeLabel(value: number | null | undefined) {
@@ -149,7 +148,7 @@ export function DashboardProfileInsights() {
               </p>
             </div>
             <Link
-              href="/settings"
+              href="/preferences"
               className="inline-flex items-center gap-2 rounded-sm bg-emerald-500 px-3 py-2 text-sm font-bold text-zinc-950 transition-colors hover:bg-emerald-400"
             >
               Edit

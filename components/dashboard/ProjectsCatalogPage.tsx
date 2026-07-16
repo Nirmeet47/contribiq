@@ -15,26 +15,10 @@ import {
 import { Activity, GitFork, Search, Star } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { apiGet } from "@/lib/api-client";
+import type { ProjectSummary } from "@/lib/project-serializer";
 
 type ProjectSort = "activity" | "stars" | "issues" | "health" | "name";
-
-export type ProjectSummary = {
-  id: string;
-  owner: string;
-  name: string;
-  fullName: string;
-  description: string | null;
-  categories: string[];
-  stars: number;
-  language: string | null;
-  maintainerScore: number;
-  activityScore: number;
-  healthScore: number;
-  openIssueCount: number;
-  classifiedIssueCount: number;
-  lastFetchedAt?: string | null;
-  difficultyCounts?: Record<string, number>;
-};
 
 type ProjectsResponse = {
   total: number;
@@ -95,9 +79,7 @@ async function fetchProjects({
   if (category) params.set("category", category);
   for (const language of languages) params.append("language", language);
 
-  const response = await fetch(`/api/projects?${params.toString()}`);
-  if (!response.ok) throw new Error("Failed to load projects");
-  return (await response.json()) as ProjectsResponse;
+  return apiGet<ProjectsResponse>(`/api/projects?${params.toString()}`, "Failed to load projects");
 }
 
 function MetricBar({ label, value }: { label: string; value: number }) {

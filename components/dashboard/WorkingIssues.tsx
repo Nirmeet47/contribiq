@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import { CheckCircle2, Clock, ExternalLink, GitPullRequest, X } from "lucide-react";
 import Link from "next/link";
+import { apiGet, apiJson } from "@/lib/api-client";
 
 type WorkingIssue = {
   id: string;
@@ -44,9 +45,7 @@ type WorkingResponse = {
 };
 
 async function fetchWorkingIssues() {
-  const response = await fetch("/api/working");
-  if (!response.ok) throw new Error("Failed to load active work");
-  return (await response.json()) as WorkingResponse;
+  return apiGet<WorkingResponse>("/api/working", "Failed to load active work");
 }
 
 function titleCase(value: string) {
@@ -69,10 +68,9 @@ export function WorkingIssues() {
 
   const clearWorkingMutation = useMutation({
     mutationFn: async (issueId: string) => {
-      const response = await fetch(`/api/issues/${issueId}/working`, {
-        method: "POST",
+      await apiJson(`/api/issues/${issueId}/working`, {
+        fallbackMessage: "Failed to update active work",
       });
-      if (!response.ok) throw new Error("Failed to update active work");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["working"] });

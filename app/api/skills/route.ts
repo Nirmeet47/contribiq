@@ -1,92 +1,79 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/utils/supabase/server";
+import type { SkillLevel } from "@prisma/client";
 import { refreshSkillEmbeddingForUser, scoreMatchesForUser } from "@/lib/ai-api";
 import { invalidateUserFeedCaches } from "@/lib/feed-cache";
 import { prisma } from "@/lib/prisma";
-import type { SkillLevel } from "@prisma/client";
 import { canonicalizeSkills, isLanguageSkill, skillIdentity } from "@/lib/skills";
+import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 const SKILL_LEVELS = new Set<SkillLevel>(["strong", "moderate", "learning"]);
 
+async function getAuthenticatedGithubId() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error || !user) {
+    return {
+      error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    };
+  }
+
+  const githubIdStr = user.user_metadata?.provider_id;
+  if (!githubIdStr) {
+    return {
+      error: NextResponse.json({ error: "No GitHub ID" }, { status: 400 }),
+    };
+  }
+
+  return { githubId: parseInt(githubIdStr, 10) };
+}
+
 export async function GET() {
   try {
-    const supabase = await createClient();
-    const { data: { user }, error } = await supabase.auth.getUser();
+    const auth = await getAuthenticatedGithubId();
+    if (auth.error) return auth.error;
 
-    if (error || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const githubIdStr = user.user_metadata?.provider_id;
-    if (!githubIdStr) {
-      return NextResponse.json({ error: "No GitHub ID" }, { status: 400 });
-    }
-
-    const githubId = parseInt(githubIdStr, 10);
     const dbUser = await prisma.user.findUnique({
-      where: { githubId },
+      where: { githubId: auth.githubId },
       select: {
         skillProfile: {
           select: {
-            totalCommits: true,
-            totalRepos: true,
-            mergedPRs: true,
             skills: true,
-          }
-        }
-      }
+          },
+        },
+      },
     });
 
-    if (!dbUser || !dbUser.skillProfile) {
-      return NextResponse.json({ skills: [], summary: { totalCommits: 0, totalRepos: 0, mergedPRs: 0 } });
+    if (!dbUser?.skillProfile) {
+      return NextResponse.json({ skills: [] });
     }
-
-    const summary = {
-      totalCommits: dbUser.skillProfile.totalCommits,
-      totalRepos: dbUser.skillProfile.totalRepos,
-      mergedPRs: dbUser.skillProfile.mergedPRs,
-    };
 
     return NextResponse.json({
       skills: canonicalizeSkills(dbUser.skillProfile.skills),
-      summary,
     });
-  } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
 
 export async function PATCH(request: Request) {
   try {
-    const supabase = await createClient();
-    const { data: { user }, error } = await supabase.auth.getUser();
+    const auth = await getAuthenticatedGithubId();
+    if (auth.error) return auth.error;
 
-    if (error || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const githubIdStr = user.user_metadata?.provider_id;
-    if (!githubIdStr) {
-      return NextResponse.json({ error: "No GitHub ID" }, { status: 400 });
-    }
-
-    const githubId = parseInt(githubIdStr, 10);
     const dbUser = await prisma.user.findUnique({
-      where: { githubId },
-      include: { skillProfile: true }
+      where: { githubId: auth.githubId },
+      include: { skillProfile: true },
     });
 
     if (!dbUser) {
       return NextResponse.json({ error: "Profile not found" }, { status: 404 });
     }
-
-    const skillProfile =
-      dbUser.skillProfile ??
-      (await prisma.skillProfile.create({
-        data: { userId: dbUser.id },
-      }));
 
     const body = await request.json();
     const incomingSkills = body.skills;
@@ -115,12 +102,17 @@ export async function PATCH(request: Request) {
 
     const skills = [...skillsByName.values()];
     const skillNames = skills.map((skill) => skill.name);
-    const skillProfileId = skillProfile.id;
 
     const savedSkills = await prisma.$transaction(async (tx) => {
+      const skillProfile =
+        dbUser.skillProfile ??
+        (await tx.skillProfile.create({
+          data: { userId: dbUser.id },
+        }));
+
       await tx.skill.deleteMany({
         where: {
-          skillProfileId,
+          skillProfileId: skillProfile.id,
           name: { notIn: skillNames },
         },
       });
@@ -129,12 +121,12 @@ export async function PATCH(request: Request) {
         await tx.skill.upsert({
           where: {
             skillProfileId_name: {
-              skillProfileId,
+              skillProfileId: skillProfile.id,
               name: skill.name,
             },
           },
           create: {
-            skillProfileId,
+            skillProfileId: skillProfile.id,
             name: skill.name,
             level: skill.level,
             confidence: 0.5,
@@ -150,7 +142,7 @@ export async function PATCH(request: Request) {
       }
 
       return tx.skill.findMany({
-        where: { skillProfileId },
+        where: { skillProfileId: skillProfile.id },
         orderBy: { name: "asc" },
         select: {
           name: true,
@@ -170,7 +162,7 @@ export async function PATCH(request: Request) {
       await refreshSkillEmbeddingForUser(dbUser.id);
       embeddingUpdated = true;
     } catch (error) {
-      console.error("[api/me/skills] Failed to update skill embedding after skill edit", {
+      console.error("[api/skills] Failed to update skill embedding after skill edit", {
         userId: dbUser.id,
         error,
       });
@@ -180,7 +172,7 @@ export async function PATCH(request: Request) {
       await invalidateUserFeedCaches(dbUser.id, "skills-updated");
       cacheInvalidated = true;
     } catch (error) {
-      console.error("[api/me/skills] Failed to invalidate feed caches after skill edit", {
+      console.error("[api/skills] Failed to invalidate feed caches after skill edit", {
         userId: dbUser.id,
         error,
       });
@@ -190,7 +182,7 @@ export async function PATCH(request: Request) {
       await scoreMatchesForUser(dbUser.id);
       matchScoringTriggered = true;
     } catch (error) {
-      console.error("[api/me/skills] Failed to score matches after skill edit", {
+      console.error("[api/skills] Failed to score matches after skill edit", {
         userId: dbUser.id,
         error,
       });
@@ -203,7 +195,7 @@ export async function PATCH(request: Request) {
       cacheInvalidated,
       matchScoringTriggered,
     });
-  } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
