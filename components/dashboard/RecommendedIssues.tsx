@@ -271,7 +271,7 @@ async function fetchFeed({
 }
 
 async function fetchSkills() {
-  return apiGet<SkillsResponse>("/api/me/skills", "Failed to load skills");
+  return apiGet<SkillsResponse>("/api/skills", "Failed to load skills");
 }
 
 function buildMatchReasons(match: FeedMatch, userSkills: UserSkill[]) {
