@@ -97,8 +97,8 @@ export function DashboardProfileInsights() {
   return (
     <section className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight text-zinc-100">Matching profile</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
+        <h2 className="text-2xl font-semibold tracking-tight text-white">Matching profile</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
           Skills and preferences that shape your repository recommendations.
         </p>
       </div>
@@ -107,8 +107,8 @@ export function DashboardProfileInsights() {
         <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-5">
           <div className="mb-5 flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-xl font-bold tracking-tight text-zinc-100">Skills</h2>
-              <p className="mt-1 text-sm leading-6 text-zinc-500">Your strongest match signals at a glance.</p>
+              <h2 className="text-xl font-semibold tracking-tight text-white">Skills</h2>
+              <p className="mt-1 text-sm leading-6 text-zinc-300">Your strongest match signals at a glance.</p>
             </div>
             <Link
               href="/skills"
@@ -121,7 +121,7 @@ export function DashboardProfileInsights() {
           </div>
 
           {meQuery.isLoading ? (
-            <div className="flex h-80 items-center justify-center rounded-sm border border-zinc-900 bg-zinc-900/30 text-sm font-medium text-zinc-500">
+            <div className="flex h-80 items-center justify-center rounded-sm border border-zinc-900 bg-zinc-900/30 text-sm font-medium text-zinc-300">
               <Loader2 className="mr-2 h-4 w-4 animate-spin text-emerald-400" />
               Loading skills
             </div>
@@ -142,8 +142,8 @@ export function DashboardProfileInsights() {
         <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-5">
           <div className="mb-5 flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-xl font-bold tracking-tight text-zinc-100">Preferences</h2>
-              <p className="mt-1 text-sm leading-6 text-zinc-500">
+              <h2 className="text-xl font-semibold tracking-tight text-white">Preferences</h2>
+              <p className="mt-1 text-sm leading-6 text-zinc-300">
                 Interests and weekly capacity used by your matcher.
               </p>
             </div>
@@ -156,7 +156,7 @@ export function DashboardProfileInsights() {
           </div>
 
           {meQuery.isLoading ? (
-            <div className="flex h-80 items-center justify-center rounded-sm border border-zinc-900 bg-zinc-900/30 text-sm font-medium text-zinc-500">
+            <div className="flex h-80 items-center justify-center rounded-sm border border-zinc-900 bg-zinc-900/30 text-sm font-medium text-zinc-300">
               <Loader2 className="mr-2 h-4 w-4 animate-spin text-sky-400" />
               Loading preferences
             </div>
@@ -172,26 +172,26 @@ export function DashboardProfileInsights() {
                         key={interest.value}
                         className="flex items-center gap-3 rounded-sm border border-zinc-800 bg-zinc-900/40 px-3 py-3"
                       >
-                        <Icon className="h-4 w-4 text-zinc-500" />
-                        <span className="text-sm font-bold text-zinc-100">{interest.label}</span>
+                        <Icon className="h-4 w-4 text-emerald-400" />
+                        <span className="text-sm font-medium text-white">{interest.label}</span>
                       </div>
                     );
                   })}
                 </div>
               ) : (
-                <div className="rounded-sm border border-zinc-800 bg-zinc-900/40 p-5 text-sm leading-6 text-zinc-500">
+                <div className="rounded-sm border border-zinc-800 bg-zinc-900/40 p-5 text-sm leading-6 text-zinc-300">
                   No preferences selected yet.
                 </div>
               )}
 
               <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">
-                <div className="flex items-center gap-2 text-zinc-500">
-                  <Clock className="h-3.5 w-3.5" />
-                  <span className="text-xs font-bold">Capacity</span>
+                <div className="flex items-center gap-2 text-white">
+                  <Clock className="h-3.5 w-3.5 text-emerald-400" />
+                  <span className="text-sm font-medium">Capacity</span>
                 </div>
-                <p className="mt-3 flex items-end gap-1 text-3xl font-bold tracking-tight text-white">
+                <p className="mt-3 flex items-end gap-1 text-3xl font-semibold tracking-tight text-white">
                   {timeLabel(timeCommitment)}
-                  {activeCapacitySegment >= 0 && <span className="pb-1 text-sm font-bold text-zinc-400">hrs / week</span>}
+                  {activeCapacitySegment >= 0 && <span className="pb-1 text-sm font-medium text-zinc-200">hrs / week</span>}
                 </p>
                 <div className="mt-5 grid grid-cols-3 gap-1.5">
                   {[0, 1, 2].map((segment) => (
@@ -203,7 +203,7 @@ export function DashboardProfileInsights() {
                     />
                   ))}
                 </div>
-                <div className="mt-2 grid grid-cols-3 text-[11px] font-bold text-zinc-500">
+                <div className="mt-2 grid grid-cols-3 text-[11px] font-medium text-zinc-300">
                   <span>&lt;5</span>
                   <span className="text-center">5-10</span>
                   <span className="text-right">10+</span>

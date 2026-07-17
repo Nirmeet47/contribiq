@@ -216,7 +216,7 @@ function LanguageSelect({
           ) : (
             filteredGroups.map((group) => (
               <div key={group.label} className="py-1 first:pt-0 last:pb-0">
-                <p className="mb-1 flex min-h-10 items-center rounded-sm bg-zinc-900/60 px-2.5 text-sm font-bold text-white">
+                <p className="mb-1 flex min-h-10 items-center rounded-sm border border-zinc-800 bg-zinc-900 px-2.5 text-lg font-semibold text-white">
                   {group.label}
                 </p>
                 {group.languages.map((language) => {

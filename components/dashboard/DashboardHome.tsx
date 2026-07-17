@@ -77,8 +77,8 @@ function DashboardProfileHeader() {
       <div className="mt-6 grid gap-3 md:grid-cols-3">
         {stats.map((stat) => (
           <div key={stat.label} className="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3">
-            <p className="text-xs font-bold text-zinc-500">{stat.label}</p>
-            <p className="mt-1 text-xl font-bold leading-none text-zinc-100">{stat.value}</p>
+            <p className="text-sm font-medium text-white">{stat.label}</p>
+            <p className="mt-1 text-xl font-semibold leading-none text-white">{stat.value}</p>
           </div>
         ))}
       </div>
