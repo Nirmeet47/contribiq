@@ -434,19 +434,29 @@ function RecommendedIssueCard({
             style={{ backgroundImage: `url(${logoUrl})` }}
             aria-label={`${match.issue.repo.owner} logo`}
           />
-          <div className="min-w-0 space-y-1.5">
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-white">
               <Link
                 href={`/projects/${match.issue.repo.id}`}
-                className="truncate rounded-sm border border-zinc-800 bg-zinc-900 px-2 py-1 text-white hover:border-zinc-700"
+                className="inline-flex h-8 max-w-40 items-center truncate rounded-sm border border-zinc-800 bg-zinc-900 px-2.5 text-xs font-medium text-white hover:border-zinc-700"
                 title={match.issue.repo.owner}
               >
                 {match.issue.repo.owner}
               </Link>
+              <a
+                href={`https://github.com/${match.issue.repo.owner}/${match.issue.repo.name}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-sm border border-zinc-800 bg-zinc-900 text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white"
+                aria-label="Open repository on GitHub"
+                title="Open on GitHub"
+              >
+                <GitHubMark className="h-4 w-4" />
+              </a>
             </div>
             <Link
               href={`/issues/${match.issue.id}`}
-              className="group inline-flex items-start gap-2 text-base font-bold leading-6 text-zinc-100 hover:text-white"
+              className="group mt-1 inline-flex items-start gap-2 text-base font-bold leading-6 text-zinc-100 hover:text-white"
             >
               {match.issue.title}
             </Link>
@@ -515,6 +525,12 @@ function RecommendedIssueCard({
             className="inline-flex h-9 items-center justify-center rounded-sm bg-emerald-500 px-4 text-sm font-bold text-zinc-950 shadow-sm shadow-emerald-950/40 transition-colors hover:bg-emerald-400"
           >
             View Project
+          </Link>
+          <Link
+            href={`/issues/${match.issue.id}`}
+            className="inline-flex h-9 items-center justify-center rounded-sm border border-zinc-800 bg-zinc-900 px-4 text-sm font-medium text-white transition-colors hover:border-zinc-700 hover:bg-zinc-800"
+          >
+            View Issue
           </Link>
         </div>
         <div className="flex shrink-0 items-center gap-2">
