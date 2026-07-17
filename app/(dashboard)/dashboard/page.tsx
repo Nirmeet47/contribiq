@@ -30,12 +30,6 @@ type DbUser = {
 
 type ViewState = "loading" | "onboarding" | "skills_review" | "interests" | "time_commitment" | "dashboard";
 
-type SkillsSummary = {
-  totalCommits: number;
-  totalRepos: number;
-  mergedPRs: number;
-};
-
 async function readJson<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") ?? "";
 
@@ -56,7 +50,6 @@ export default function DashboardPage() {
   const [isError, setIsError] = useState(false);
   const [sseRetryToken, setSseRetryToken] = useState(0);
   const [skills, setSkills] = useState<Skill[]>([]);
-  const [summary, setSummary] = useState<SkillsSummary>({ totalCommits: 0, totalRepos: 0, mergedPRs: 0 });
   const [saving, setSaving] = useState(false);
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
   const [selectedTimeCommitment, setSelectedTimeCommitment] = useState<number | null>(null);
@@ -72,9 +65,8 @@ export default function DashboardPage() {
       }
       if (!response.ok) throw new Error(`Failed to fetch skills: ${response.status}`);
 
-      const data = await readJson<{ skills?: Skill[]; summary?: SkillsSummary }>(response);
+      const data = await readJson<{ skills?: Skill[] }>(response);
       setSkills(data.skills ?? []);
-      if (data.summary) setSummary(data.summary);
     } catch (error) {
       console.error("Failed to fetch skills", error);
     }
@@ -267,7 +259,6 @@ export default function DashboardPage() {
       <DashboardSkillReview
         skills={skills}
         setSkills={setSkills}
-        summary={summary}
         saving={saving}
         onSave={handleSaveSkills}
         onContinue={() => setViewState("interests")}

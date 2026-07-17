@@ -3,30 +3,25 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
-  ArrowDown,
-  ArrowUp,
+  Check,
   CheckCircle2,
-  Loader2,
+  ChevronDown,
   Plus,
-  Save,
+  Search,
   Trash2,
-  Undo2,
+  X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import type { RefObject } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { normalizeSkillName, skillIdentity } from "@/lib/skills";
+import {
+  GITHUB_LANGUAGE_GROUPS,
+  normalizeSkillName,
+  SKILL_LEVEL_ORDER,
+  skillIdentity,
+} from "@/lib/skills";
 
 type SkillLevel = "strong" | "moderate" | "learning";
 
@@ -50,46 +45,13 @@ type SaveResponse = {
   error?: unknown;
 };
 
-const LEVELS: SkillLevel[] = ["strong", "moderate", "learning"];
+const LEVELS: SkillLevel[] = ["learning", "moderate", "strong"];
 
-const LEVEL_META: Record<
-  SkillLevel,
-  {
-    label: string;
-    description: string;
-    badge: "success" | "secondary" | "outline";
-    accent: string;
-    panel: string;
-  }
-> = {
-  strong: {
-    label: "Strong",
-    description: "Skills the matcher should trust most for recommendations.",
-    badge: "success",
-    accent: "text-emerald-300",
-    panel: "border-emerald-500/30 bg-emerald-500/5",
-  },
-  moderate: {
-    label: "Moderate",
-    description: "Skills you can contribute with, but less deeply.",
-    badge: "secondary",
-    accent: "text-amber-300",
-    panel: "border-amber-500/25 bg-amber-500/5",
-  },
-  learning: {
-    label: "Learning",
-    description: "Skills you want beginner-friendly issues for.",
-    badge: "outline",
-    accent: "text-sky-300",
-    panel: "border-sky-500/25 bg-sky-500/5",
-  },
+const LEVEL_LABELS: Record<SkillLevel, string> = {
+  learning: "Learning",
+  moderate: "Moderate",
+  strong: "Strong",
 };
-
-function nextLevel(level: SkillLevel, direction: "up" | "down") {
-  const index = LEVELS.indexOf(level);
-  const nextIndex = direction === "up" ? index - 1 : index + 1;
-  return LEVELS[nextIndex];
-}
 
 async function readJson<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") ?? "";
@@ -139,11 +101,160 @@ async function saveSkills(skills: Skill[]) {
   return payload;
 }
 
-function skillSnapshot(skills: Skill[]) {
-  return JSON.stringify(
-    skills
-      .map(({ name, level }) => ({ name: skillIdentity(name), level }))
-      .sort((a, b) => a.name.localeCompare(b.name))
+function formatEvidence(skill: Skill) {
+  const repos = `${skill.repoCount} ${skill.repoCount === 1 ? "repo" : "repos"}`;
+  const commits = `${skill.commitCount} ${skill.commitCount === 1 ? "commit" : "commits"}`;
+  return `${repos} / ${commits}`;
+}
+
+function confidencePercent(skill: Skill) {
+  return Math.round(Math.max(0, Math.min(1, skill.confidence)) * 100);
+}
+
+function useDismissibleDetails(id: string, detailsRef: RefObject<HTMLDetailsElement | null>) {
+  useEffect(() => {
+    function closeOtherDropdowns(event: Event) {
+      const current = event as CustomEvent<string>;
+      if (current.detail !== id) detailsRef.current?.removeAttribute("open");
+    }
+
+    function closeOnOutsidePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (detailsRef.current?.contains(target)) return;
+
+      detailsRef.current?.removeAttribute("open");
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+
+      detailsRef.current?.removeAttribute("open");
+      detailsRef.current?.querySelector("summary")?.blur();
+    }
+
+    window.addEventListener("dashboard-filter-open", closeOtherDropdowns);
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown, true);
+    document.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      window.removeEventListener("dashboard-filter-open", closeOtherDropdowns);
+      document.removeEventListener("pointerdown", closeOnOutsidePointerDown, true);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [detailsRef, id]);
+}
+
+function LanguageSelect({
+  value,
+  disabledSkillIds,
+  onChange,
+}: {
+  value: string;
+  disabledSkillIds: Set<string>;
+  onChange: (value: string) => void;
+}) {
+  const id = useId();
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const [search, setSearch] = useState("");
+  const filteredGroups = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return GITHUB_LANGUAGE_GROUPS;
+
+    return GITHUB_LANGUAGE_GROUPS.map((group) => ({
+      label: group.label,
+      languages: group.languages.filter((language) => language.toLowerCase().includes(query)),
+    })).filter((group) => group.languages.length > 0);
+  }, [search]);
+
+  useDismissibleDetails(id, detailsRef);
+
+  function selectLanguage(language: string) {
+    onChange(language);
+    detailsRef.current?.removeAttribute("open");
+  }
+
+  return (
+    <details
+      ref={detailsRef}
+      className="group relative flex-1"
+      onToggle={(event) => {
+        if (event.currentTarget.open) {
+          window.dispatchEvent(new CustomEvent("dashboard-filter-open", { detail: id }));
+        }
+      }}
+    >
+      <summary className="flex h-12 w-full cursor-pointer list-none items-center justify-between gap-3 rounded-sm border border-zinc-800 bg-zinc-900 px-4 text-sm font-semibold text-white outline-none transition-colors hover:border-zinc-700 [&::-webkit-details-marker]:hidden">
+        <span className="truncate">{value || "Select language"}</span>
+        <ChevronDown className="h-4 w-4 text-zinc-500 transition-transform group-open:rotate-180" />
+      </summary>
+
+      <div className="absolute left-0 z-30 mt-2 w-full rounded-sm border border-zinc-800 bg-zinc-950 p-2 shadow-xl shadow-black/40">
+        <label className="relative mb-2 block">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search language"
+            className="h-10 w-full rounded-sm border border-zinc-800 bg-zinc-900 pl-8 pr-9 text-sm font-normal text-white outline-none transition-colors placeholder:text-zinc-500 hover:border-zinc-700 focus:border-emerald-500/60"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              className="absolute right-1 top-1 inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-white"
+              aria-label="Clear search"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </label>
+
+        <div className="custom-scrollbar max-h-72 overflow-y-auto">
+          {filteredGroups.length === 0 ? (
+            <p className="px-2.5 py-2 text-sm font-medium text-zinc-500">No languages found.</p>
+          ) : (
+            filteredGroups.map((group) => (
+              <div key={group.label} className="py-1 first:pt-0 last:pb-0">
+                <p className="mb-1 flex min-h-10 items-center rounded-sm border border-zinc-800 bg-zinc-900 px-2.5 text-lg font-semibold text-white">
+                  {group.label}
+                </p>
+                {group.languages.map((language) => {
+                  const selected = value !== "" && language === value;
+                  const disabled = disabledSkillIds.has(skillIdentity(language));
+
+                  return (
+                    <button
+                      key={language}
+                      type="button"
+                      onClick={() => selectLanguage(language)}
+                      disabled={disabled}
+                      className={`flex w-full cursor-pointer items-center gap-2 rounded-sm px-2.5 py-2.5 text-left text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                        selected
+                          ? "bg-emerald-500/10 text-emerald-300"
+                          : "text-zinc-200 hover:bg-zinc-900 hover:text-white"
+                      }`}
+                    >
+                      <span
+                        className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border ${
+                          selected
+                            ? "border-emerald-400 bg-emerald-500 text-zinc-950"
+                            : "border-zinc-700 bg-zinc-950 text-transparent"
+                        }`}
+                        aria-hidden="true"
+                      >
+                        <Check className="h-3 w-3" strokeWidth={3.5} />
+                      </span>
+                      <span className="truncate">{language}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -151,11 +262,7 @@ export default function SkillsPage() {
   const queryClient = useQueryClient();
   const [draftSkills, setDraftSkills] = useState<Skill[]>([]);
   const [draftInitialized, setDraftInitialized] = useState(false);
-  const [newSkillInputs, setNewSkillInputs] = useState<Record<SkillLevel, string>>({
-    strong: "",
-    moderate: "",
-    learning: "",
-  });
+  const [selectedLanguage, setSelectedLanguage] = useState("");
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   const skillsQuery = useQuery({
@@ -163,15 +270,20 @@ export default function SkillsPage() {
     queryFn: fetchSkills,
   });
 
-  const serverSkills = useMemo(() => skillsQuery.data?.skills ?? [], [skillsQuery.data?.skills]);
-  const hasUnsavedChanges = skillSnapshot(draftSkills) !== skillSnapshot(serverSkills);
+  const selectedSkillIds = useMemo(
+    () => new Set(draftSkills.map((skill) => skillIdentity(skill.name))),
+    [draftSkills]
+  );
 
-  const groupedSkills = useMemo(() => {
-    const grouped: Record<SkillLevel, Skill[]> = { strong: [], moderate: [], learning: [] };
-    for (const skill of draftSkills) grouped[skill.level]?.push(skill);
-    for (const level of LEVELS) grouped[level].sort((a, b) => a.name.localeCompare(b.name));
-    return grouped;
-  }, [draftSkills]);
+  const sortedSkills = useMemo(
+    () =>
+      [...draftSkills].sort((a, b) => {
+        const levelDelta = SKILL_LEVEL_ORDER[a.level] - SKILL_LEVEL_ORDER[b.level];
+        if (levelDelta !== 0) return levelDelta;
+        return b.confidence - a.confidence || a.name.localeCompare(b.name);
+      }),
+    [draftSkills]
+  );
 
   useEffect(() => {
     if (skillsQuery.data && !draftInitialized) {
@@ -183,7 +295,7 @@ export default function SkillsPage() {
   }, [draftInitialized, skillsQuery.data]);
 
   const saveMutation = useMutation({
-    mutationFn: () => saveSkills(draftSkills),
+    mutationFn: (nextSkills: Skill[]) => saveSkills(nextSkills),
     onSuccess: async (payload) => {
       if (payload.skills) setDraftSkills(payload.skills);
       setDraftInitialized(true);
@@ -201,27 +313,24 @@ export default function SkillsPage() {
   function setSkills(nextSkills: Skill[]) {
     setSaveMessage(null);
     setDraftSkills(nextSkills);
+    saveMutation.mutate(nextSkills);
   }
 
-  function addSkill(level: SkillLevel) {
-    const name = normalizeSkillName(newSkillInputs[level]);
-    if (!name) return;
-    if (draftSkills.some((skill) => skillIdentity(skill.name) === skillIdentity(name))) {
-      setNewSkillInputs((current) => ({ ...current, [level]: "" }));
-      return;
-    }
+  function addSelectedLanguage() {
+    const name = normalizeSkillName(selectedLanguage);
+    if (!name || draftSkills.some((skill) => skillIdentity(skill.name) === skillIdentity(name))) return;
 
     setSkills([
       ...draftSkills,
       {
         name,
-        level,
+        level: "learning",
         confidence: 0.5,
         repoCount: 0,
         commitCount: 0,
       },
     ]);
-    setNewSkillInputs((current) => ({ ...current, [level]: "" }));
+    setSelectedLanguage("");
   }
 
   function updateSkillLevel(name: string, level: SkillLevel) {
@@ -232,205 +341,149 @@ export default function SkillsPage() {
     setSkills(draftSkills.filter((skill) => skill.name !== name));
   }
 
-  function resetDraft() {
-    setDraftSkills(serverSkills);
-    setSaveMessage(null);
-  }
-
   return (
     <section className="mx-auto w-full max-w-7xl space-y-6 px-6 py-8 sm:px-8 lg:px-12">
-      <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+      <header>
         <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-emerald-400">Profile signals</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-zinc-100">Skills</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
-            Review the skills ContribIQ uses to rank issues and decide where new skills should sit.
+          <h1 className="text-4xl font-bold tracking-tight text-zinc-100">Skills</h1>
+          <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-zinc-400">
+            Ranked by trust. Change the tier to control how strongly the matcher weighs each language.
           </p>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={resetDraft}
-            disabled={!hasUnsavedChanges || saveMutation.isPending}
-            className="cursor-pointer disabled:cursor-not-allowed"
-          >
-            <Undo2 className="h-4 w-4" />
-            Reset
-          </Button>
-          <Button
-            type="button"
-            onClick={() => saveMutation.mutate()}
-            disabled={!hasUnsavedChanges || saveMutation.isPending}
-            className="cursor-pointer disabled:cursor-not-allowed"
-          >
-            {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Save Skills
-          </Button>
         </div>
       </header>
 
-      <Separator />
-
-      {skillsQuery.isLoading && (
-        <div className="grid gap-4 xl:grid-cols-3">
-          {LEVELS.map((level) => (
-            <Card key={level}>
-              <CardHeader>
-                <Skeleton className="h-5 w-28" />
-                <Skeleton className="h-4 w-full" />
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Skeleton className="h-16 w-full" />
-                <Skeleton className="h-16 w-full" />
-                <Skeleton className="h-10 w-full" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {skillsQuery.isError && (
-        <Alert variant="destructive">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>Skills could not be loaded.</AlertDescription>
+      <div className="space-y-6">
+          <div className="flex flex-col gap-3 pt-3 lg:flex-row">
+            <LanguageSelect
+              value={selectedLanguage}
+              disabledSkillIds={selectedSkillIds}
+              onChange={setSelectedLanguage}
+            />
+            <Button
+              type="button"
+              onClick={addSelectedLanguage}
+              disabled={!selectedLanguage || selectedSkillIds.has(skillIdentity(selectedLanguage))}
+              className="h-12 cursor-pointer px-5 disabled:cursor-not-allowed lg:w-fit"
+            >
+              <Plus className="h-4 w-4" />
+              Add skill
+            </Button>
           </div>
-        </Alert>
-      )}
 
-      {saveMutation.isError && (
-        <Alert variant="destructive">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>Skills could not be saved.</AlertDescription>
-          </div>
-        </Alert>
-      )}
+          {skillsQuery.isLoading && (
+            <div className="space-y-3">
+              {[1, 2, 3, 4, 5].map((item) => (
+                <Skeleton key={item} className="h-16 w-full" />
+              ))}
+            </div>
+          )}
 
-      {saveMessage && (
-        <div className="flex items-center gap-2 text-sm font-medium text-emerald-300">
-          <CheckCircle2 className="h-4 w-4" />
-          <span>{saveMessage}</span>
-        </div>
-      )}
+          {skillsQuery.isError && (
+            <Alert variant="destructive">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>Skills could not be loaded.</AlertDescription>
+              </div>
+            </Alert>
+          )}
 
-      {!skillsQuery.isLoading && !skillsQuery.isError && (
-        <div className="grid gap-4 xl:grid-cols-3">
-          {LEVELS.map((level) => {
-            const meta = LEVEL_META[level];
-            const levelSkills = groupedSkills[level];
+          {saveMutation.isError && (
+            <Alert variant="destructive">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>Skills could not be saved.</AlertDescription>
+              </div>
+            </Alert>
+          )}
 
-            return (
-              <Card key={level} className={meta.panel}>
-                <CardHeader>
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <CardTitle className={meta.accent}>{meta.label}</CardTitle>
-                      <CardDescription>{meta.description}</CardDescription>
-                    </div>
-                    <Badge variant={meta.badge}>{levelSkills.length}</Badge>
-                  </div>
-                </CardHeader>
+          {saveMessage && (
+            <div className="flex items-center gap-2 text-sm font-medium text-emerald-300">
+              <CheckCircle2 className="h-4 w-4" />
+              <span>{saveMessage}</span>
+            </div>
+          )}
 
-                <CardContent className="space-y-3">
-                  {levelSkills.map((skill) => {
-                    const upLevel = nextLevel(skill.level, "up");
-                    const downLevel = nextLevel(skill.level, "down");
+          {!skillsQuery.isLoading && !skillsQuery.isError && (
+            <div className="overflow-hidden rounded-sm border border-zinc-800 bg-zinc-950">
+              <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_40px] gap-8 border-b border-zinc-800 px-4 py-3 text-sm font-bold text-zinc-100 lg:grid">
+                <span>Skill</span>
+                <span className="text-center">Confidence</span>
+                <span className="text-center">Trust tier</span>
+                <span />
+              </div>
+
+              {sortedSkills.length === 0 ? (
+                <div className="p-8 text-center text-sm font-medium text-zinc-500">
+                  Add your first language to start shaping recommendations.
+                </div>
+              ) : (
+                <div className="divide-y divide-zinc-800">
+                  {sortedSkills.map((skill) => {
+                    const confidence = confidencePercent(skill);
 
                     return (
-                      <div key={skill.name} className="rounded-sm border border-zinc-800 bg-zinc-950 p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-bold text-zinc-100">{skill.name}</p>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <Badge variant="secondary">{Math.round(skill.confidence * 100)}% confidence</Badge>
-                              {(skill.repoCount > 0 || skill.commitCount > 0) && (
-                                <Badge variant="outline">
-                                  {skill.repoCount} repos / {skill.commitCount} commits
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="flex shrink-0 items-center gap-1">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              onClick={() => upLevel && updateSkillLevel(skill.name, upLevel)}
-                              disabled={!upLevel}
-                              aria-label={`Move ${skill.name} up`}
-                              title="Move up"
-                              className="h-8 w-8 cursor-pointer disabled:cursor-not-allowed"
-                            >
-                              <ArrowUp className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              onClick={() => downLevel && updateSkillLevel(skill.name, downLevel)}
-                              disabled={!downLevel}
-                              aria-label={`Move ${skill.name} down`}
-                              title="Move down"
-                              className="h-8 w-8 cursor-pointer disabled:cursor-not-allowed"
-                            >
-                              <ArrowDown className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="destructive"
-                              size="icon"
-                              onClick={() => removeSkill(skill.name)}
-                              aria-label={`Remove ${skill.name}`}
-                              title="Remove"
-                              className="h-8 w-8 cursor-pointer"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
+                      <div
+                        key={skill.name}
+                        className="grid gap-4 bg-zinc-950 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_40px] lg:items-center lg:gap-8"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-base font-bold text-zinc-100">{skill.name}</p>
+                          <p className="mt-1 text-xs font-medium text-zinc-500">{formatEvidence(skill)}</p>
                         </div>
+
+                        <div className="flex w-full items-center gap-2">
+                          <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-sm bg-zinc-900">
+                            <div
+                              className="h-full rounded-sm bg-emerald-500"
+                              style={{ width: `${confidence}%` }}
+                            />
+                          </div>
+                          <span className="w-9 shrink-0 text-right text-xs font-bold leading-none text-zinc-300">
+                            {confidence}%
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-1 rounded-sm border border-zinc-800 bg-zinc-900 p-1">
+                          {LEVELS.map((level) => {
+                            const active = skill.level === level;
+
+                            return (
+                              <button
+                                key={level}
+                                type="button"
+                                onClick={() => updateSkillLevel(skill.name, level)}
+                                className={`flex h-10 cursor-pointer items-center justify-center gap-1 rounded-sm px-2 text-xs font-bold transition-colors ${
+                                  active
+                                    ? "bg-zinc-800 text-white shadow-sm"
+                                    : "text-zinc-300 hover:bg-zinc-950/70 hover:text-white"
+                                }`}
+                              >
+                                {active && level === "strong" && <Check className="h-3.5 w-3.5 text-emerald-300" />}
+                                {LEVEL_LABELS[level]}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="icon"
+                          onClick={() => removeSkill(skill.name)}
+                          aria-label={`Remove ${skill.name}`}
+                          title="Remove"
+                          className="h-9 w-9 cursor-pointer place-self-center"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     );
                   })}
-
-                  {levelSkills.length === 0 && (
-                    <div className="rounded-sm border border-dashed border-zinc-800 bg-zinc-950/70 p-4 text-sm font-medium text-zinc-500">
-                      No skills in this group yet.
-                    </div>
-                  )}
-
-                  <div className="flex gap-2 pt-1">
-                    <Input
-                      value={newSkillInputs[level]}
-                      onChange={(event) =>
-                        setNewSkillInputs((current) => ({ ...current, [level]: event.target.value }))
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") addSkill(level);
-                      }}
-                      placeholder={`Add ${meta.label.toLowerCase()} skill`}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => addSkill(level)}
-                      aria-label={`Add ${meta.label} skill`}
-                      title="Add skill"
-                      className="shrink-0 cursor-pointer"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
-      )}
     </section>
   );
 }

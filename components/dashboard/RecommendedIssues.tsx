@@ -275,7 +275,8 @@ async function fetchSkills() {
 }
 
 function buildMatchReasons(match: FeedMatch, userSkills: UserSkill[]) {
-  const userSkillIds = new Set(userSkills.map((skill) => skillIdentity(skill.name)));
+  const userSkillById = new Map(userSkills.map((skill) => [skillIdentity(skill.name), skill]));
+  const userSkillIds = new Set(userSkillById.keys());
   const userLanguageIds = new Set(
     userSkills.filter((skill) => isLanguageSkill(skill.name)).map((skill) => skillIdentity(skill.name))
   );
@@ -285,25 +286,35 @@ function buildMatchReasons(match: FeedMatch, userSkills: UserSkill[]) {
   const reasons: string[] = [];
 
   if (matchedSkills.length > 0) {
-    reasons.push(`Matched skills: ${matchedSkills.join(", ")}`);
+    const skillDetails = matchedSkills
+      .map((skill) => {
+        const userSkill = userSkillById.get(skillIdentity(skill));
+        return userSkill ? `${skill} (${titleCase(userSkill.level)})` : skill;
+      })
+      .join(", ");
+    reasons.push(`Uses your ${skillDetails} skill${matchedSkills.length > 1 ? "s" : ""}`);
   } else if (match.skillSim >= 0.65) {
-    reasons.push("Strong skill-profile similarity");
+    reasons.push(`Skill profile similarity is ${Math.round(match.skillSim * 100)}%`);
   }
 
   if (match.issue.repo.language && userLanguageIds.has(skillIdentity(match.issue.repo.language))) {
-    reasons.push(`${match.issue.repo.language} repo matches your languages`);
+    reasons.push(`${match.issue.repo.name} is primarily ${match.issue.repo.language}`);
   }
 
-  if (match.interestSim > 0) {
-    reasons.push("Aligned with your contribution interests");
+  if (match.issue.issueType && match.interestSim > 0) {
+    reasons.push(`${titleCase(match.issue.issueType)} work matches your interests`);
+  } else if (match.interestSim > 0) {
+    reasons.push(`Interest match is ${Math.round(match.interestSim * 100)}%`);
   }
 
   if (match.diffScore >= 0.75 && match.issue.difficulty) {
-    reasons.push(`${titleCase(match.issue.difficulty)} difficulty fits your profile`);
+    const timeEstimate =
+      match.issue.estimatedHours !== null ? `, about ${match.issue.estimatedHours}h` : "";
+    reasons.push(`${titleCase(match.issue.difficulty)} difficulty fits your profile${timeEstimate}`);
   }
 
   if (match.issue.repo.maintainerScore >= 0.7) {
-    reasons.push("Maintainers usually respond quickly");
+    reasons.push(`${match.issue.repo.owner} usually responds quickly`);
   }
 
   return reasons.slice(0, 3);
@@ -419,18 +430,33 @@ function RecommendedIssueCard({
       <div className="mb-4 flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-start gap-3">
           <div
-            className="h-10 w-10 shrink-0 rounded-sm border border-zinc-800 bg-zinc-900 bg-cover bg-center"
+            className="h-14 w-14 shrink-0 rounded-sm border border-zinc-800 bg-zinc-900 bg-cover bg-center"
             style={{ backgroundImage: `url(${logoUrl})` }}
             aria-label={`${match.issue.repo.owner} logo`}
           />
-          <div className="min-w-0 space-y-1">
-            <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-zinc-500">
-              <span>{match.issue.repo.fullName}</span>
-              {match.issue.repo.language && <span>{match.issue.repo.language}</span>}
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-white">
+              <Link
+                href={`/projects/${match.issue.repo.id}`}
+                className="inline-flex h-8 max-w-40 items-center truncate rounded-sm border border-zinc-800 bg-zinc-900 px-2.5 text-xs font-medium text-white hover:border-zinc-700"
+                title={match.issue.repo.owner}
+              >
+                {match.issue.repo.owner}
+              </Link>
+              <a
+                href={`https://github.com/${match.issue.repo.owner}/${match.issue.repo.name}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-sm border border-zinc-800 bg-zinc-900 text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white"
+                aria-label="Open repository on GitHub"
+                title="Open on GitHub"
+              >
+                <GitHubMark className="h-4 w-4" />
+              </a>
             </div>
             <Link
               href={`/issues/${match.issue.id}`}
-              className="group inline-flex items-start gap-2 text-base font-bold leading-6 text-zinc-100 hover:text-white"
+              className="group mt-1 inline-flex items-start gap-2 text-base font-bold leading-6 text-zinc-100 hover:text-white"
             >
               {match.issue.title}
             </Link>
@@ -499,6 +525,12 @@ function RecommendedIssueCard({
             className="inline-flex h-9 items-center justify-center rounded-sm bg-emerald-500 px-4 text-sm font-bold text-zinc-950 shadow-sm shadow-emerald-950/40 transition-colors hover:bg-emerald-400"
           >
             View Project
+          </Link>
+          <Link
+            href={`/issues/${match.issue.id}`}
+            className="inline-flex h-9 items-center justify-center rounded-sm border border-zinc-800 bg-zinc-900 px-4 text-sm font-medium text-white transition-colors hover:border-zinc-700 hover:bg-zinc-800"
+          >
+            View Issue
           </Link>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -583,7 +615,7 @@ export function RecommendedIssues() {
             Issues ranked from your skills, interests, and contribution history.
           </p>
         </div>
-        <div className="inline-flex h-9 w-fit items-center gap-2 rounded-sm border border-emerald-500/20 bg-emerald-500/10 px-3 text-xs font-bold text-emerald-300">
+        <div className="inline-flex h-9 w-fit items-center gap-2 rounded-sm border border-emerald-500/20 bg-emerald-500/10 px-3 text-xs font-medium text-emerald-300">
           <Clock className="h-3.5 w-3.5" />
           {matchStatusLabel}
         </div>

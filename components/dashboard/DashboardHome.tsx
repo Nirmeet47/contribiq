@@ -55,11 +55,11 @@ function DashboardProfileHeader() {
             style={{ backgroundImage: user?.avatarUrl ? `url(${user.avatarUrl})` : undefined }}
           />
           <div className="min-w-0">
-            <span className="inline-flex rounded-sm bg-emerald-500/10 px-2 py-0.5 text-xs font-bold text-emerald-400">
+            <span className="inline-flex h-8 items-center rounded-sm border border-emerald-500/20 bg-emerald-500/10 px-2.5 text-xs font-medium text-emerald-300">
               @{username}
             </span>
-            <h1 className="mt-2 truncate text-2xl font-bold tracking-tight text-white sm:text-3xl">{displayName}</h1>
-            <div className="mt-1 text-sm font-medium text-zinc-400">
+            <h1 className="mt-1.5 truncate text-2xl font-bold tracking-tight text-white sm:text-3xl">{displayName}</h1>
+            <div className="mt-1 text-sm font-medium text-zinc-300">
               Joined <span className="text-zinc-200">{formatDate(user?.createdAt)}</span>
             </div>
           </div>
@@ -77,8 +77,8 @@ function DashboardProfileHeader() {
       <div className="mt-6 grid gap-3 md:grid-cols-3">
         {stats.map((stat) => (
           <div key={stat.label} className="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3">
-            <p className="text-xs font-bold text-zinc-500">{stat.label}</p>
-            <p className="mt-1 text-xl font-bold leading-none text-zinc-100">{stat.value}</p>
+            <p className="text-sm font-medium text-white">{stat.label}</p>
+            <p className="mt-1 text-xl font-semibold leading-none text-white">{stat.value}</p>
           </div>
         ))}
       </div>

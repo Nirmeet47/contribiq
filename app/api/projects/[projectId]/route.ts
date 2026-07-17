@@ -4,7 +4,6 @@ import { getAppGitHubToken } from "@/lib/github-token";
 import { prisma } from "@/lib/prisma";
 import { getIssueTypeBreakdown } from "@/lib/project-intelligence";
 import { redis } from "@/lib/redis";
-import { normalizeTechName } from "@/lib/tech-names";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +15,42 @@ const BEGINNER_FRIENDLY_LABELS = new Set([
   "help-wanted",
   "help wanted",
 ]);
+
+const PACKAGE_TECH_ALIASES: Record<string, string> = {
+  "@angular/core": "Angular",
+  "@nestjs/core": "NestJS",
+  "@prisma/client": "Prisma",
+  "@supabase/supabase-js": "Supabase",
+  "@sveltejs/kit": "SvelteKit",
+  "@vitejs/plugin-react": "Vite",
+  "@vue/cli-service": "Vue",
+  "@wdio/cli": "WebdriverIO",
+  "@wdio/globals": "WebdriverIO",
+  "@wdio/mocha-framework": "WebdriverIO",
+  "@wdio/runner": "WebdriverIO",
+  "angular": "Angular",
+  "django": "Django",
+  "express": "Express",
+  "fastapi": "FastAPI",
+  "fastify": "Fastify",
+  "flask": "Flask",
+  "jest": "Jest",
+  "mocha": "Mocha",
+  "mongoose": "MongoDB",
+  "next": "Next.js",
+  "nuxt": "Nuxt",
+  "playwright": "Playwright",
+  "prisma": "Prisma",
+  "pytest": "Pytest",
+  "react": "React",
+  "redis": "Redis",
+  "svelte": "Svelte",
+  "tailwindcss": "Tailwind CSS",
+  "typescript": "TypeScript",
+  "vite": "Vite",
+  "vue": "Vue",
+  "webdriverio": "WebdriverIO",
+};
 
 function githubHeaders() {
   const token = getAppGitHubToken();
@@ -53,7 +88,36 @@ async function fetchGithubContent(owner: string, name: string, filePath: string)
   return Buffer.from(payload.content.replace(/\n/g, ""), "base64").toString("utf-8");
 }
 
-async function fetchTechStack(owner: string, name: string) {
+async function fetchGithubLanguages(owner: string, name: string) {
+  const response = await fetch(`https://api.github.com/repos/${owner}/${name}/languages`, {
+    headers: githubHeaders(),
+    next: { revalidate: 3600 },
+  });
+
+  if (response.status === 404) return [];
+  if (!response.ok) throw new Error(`GitHub languages fetch failed: ${response.status}`);
+
+  const payload = (await response.json()) as Record<string, number>;
+
+  return Object.entries(payload)
+    .sort(([, a], [, b]) => b - a)
+    .map(([language]) => language)
+    .slice(0, 5);
+}
+
+function normalizePackageTech(packageName: string) {
+  const lower = packageName.trim().toLowerCase();
+  if (PACKAGE_TECH_ALIASES[lower]) return PACKAGE_TECH_ALIASES[lower];
+  if (lower.startsWith("@wdio/")) return "WebdriverIO";
+  if (lower.startsWith("@playwright/")) return "Playwright";
+  if (lower.startsWith("@nestjs/")) return "NestJS";
+  if (lower.startsWith("@vue/")) return "Vue";
+  if (lower.startsWith("@angular/")) return "Angular";
+  if (lower.startsWith("@sveltejs/")) return "Svelte";
+  return null;
+}
+
+async function fetchManifestTech(owner: string, name: string) {
   const packageJson = await fetchGithubContent(owner, name, "package.json");
 
   if (packageJson) {
@@ -67,7 +131,9 @@ async function fetchTechStack(owner: string, name: string) {
       ...Object.keys(parsed.devDependencies ?? {}),
     ];
 
-    return Array.from(new Set(packageNames.map(normalizeTechName).filter(Boolean))).slice(0, 12);
+    return Array.from(
+      new Set(packageNames.map(normalizePackageTech).filter((value): value is string => Boolean(value)))
+    );
   }
 
   const requirements = await fetchGithubContent(owner, name, "requirements.txt");
@@ -78,7 +144,86 @@ async function fetchTechStack(owner: string, name: string) {
     .map(extractRequirementName)
     .filter((value): value is string => Boolean(value));
 
-  return Array.from(new Set(packages.map(normalizeTechName).filter(Boolean))).slice(0, 12);
+  return Array.from(
+    new Set(packages.map(normalizePackageTech).filter((value): value is string => Boolean(value)))
+  );
+}
+
+async function fetchTechStack(owner: string, name: string, primaryLanguage: string | null) {
+  const [languages, manifestTech] = await Promise.all([
+    fetchGithubLanguages(owner, name).catch(() => []),
+    fetchManifestTech(owner, name).catch(() => []),
+  ]);
+
+  return Array.from(new Set([primaryLanguage, ...languages, ...manifestTech].filter(Boolean) as string[])).slice(0, 12);
+}
+
+function countFromLinkHeader(linkHeader: string | null) {
+  if (!linkHeader) return null;
+
+  const lastLink = linkHeader
+    .split(",")
+    .map((part) => part.trim())
+    .find((part) => part.includes('rel="last"'));
+  const pageMatch = lastLink?.match(/[?&]page=(\d+)/);
+
+  return pageMatch ? Number(pageMatch[1]) : null;
+}
+
+async function fetchGithubCount(url: string) {
+  const response = await fetch(url, {
+    headers: githubHeaders(),
+    next: { revalidate: 3600 },
+  });
+
+  if (response.status === 404) return 0;
+  if (!response.ok) throw new Error(`GitHub count fetch failed: ${response.status}`);
+
+  const linkedCount = countFromLinkHeader(response.headers.get("link"));
+  if (linkedCount !== null) return linkedCount;
+
+  const payload = (await response.json()) as unknown[];
+  return Array.isArray(payload) ? payload.length : 0;
+}
+
+async function fetchLastCommitAt(owner: string, name: string) {
+  const response = await fetch(
+    `https://api.github.com/repos/${owner}/${name}/commits?per_page=1`,
+    {
+      headers: githubHeaders(),
+      next: { revalidate: 3600 },
+    }
+  );
+
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`GitHub commit fetch failed: ${response.status}`);
+
+  const payload = (await response.json()) as Array<{
+    commit?: {
+      committer?: {
+        date?: string;
+      };
+      author?: {
+        date?: string;
+      };
+    };
+  }>;
+
+  return payload[0]?.commit?.committer?.date ?? payload[0]?.commit?.author?.date ?? null;
+}
+
+async function fetchGithubStats(owner: string, name: string) {
+  const [contributors, openPullRequests, lastCommitAt] = await Promise.all([
+    fetchGithubCount(`https://api.github.com/repos/${owner}/${name}/contributors?per_page=1&anon=false`).catch(() => 0),
+    fetchGithubCount(`https://api.github.com/repos/${owner}/${name}/pulls?state=open&per_page=1`).catch(() => 0),
+    fetchLastCommitAt(owner, name).catch(() => null),
+  ]);
+
+  return {
+    contributors,
+    openPullRequests,
+    lastCommitAt,
+  };
 }
 
 function calculateContributionFriendliness({
@@ -106,7 +251,7 @@ export async function GET(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
-  const cacheKey = `project:${projectId}`;
+  const cacheKey = `project:${projectId}:v3`;
   const cached = await redis.get(cacheKey);
 
   if (cached) {
@@ -135,9 +280,10 @@ export async function GET(
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  const [issueBreakdown, techStack, openIssues, openIssueLabels] = await Promise.all([
+  const [issueBreakdown, techStack, githubStats, openIssues, openIssueLabels] = await Promise.all([
     getIssueTypeBreakdown(projectId),
-    fetchTechStack(repo.owner, repo.name),
+    fetchTechStack(repo.owner, repo.name, repo.language),
+    fetchGithubStats(repo.owner, repo.name),
     prisma.issue.findMany({
       where: { repoId: projectId, state: "open", classified: true },
       orderBy: { updatedAt: "desc" },
@@ -167,6 +313,7 @@ export async function GET(
         maintainerScore: repo.maintainerScore,
       }),
     },
+    githubStats,
     issueBreakdown,
     techStack,
     openIssues,
