@@ -10,13 +10,14 @@ import {
   Clock,
   GitPullRequest,
   Loader2,
+  MessageSquare,
   Send,
   Star,
   ThumbsDown,
   UsersRound,
 } from "lucide-react";
 import Link from "next/link";
-import { FormEvent, use, useState } from "react";
+import { FormEvent, use, useEffect, useRef, useState } from "react";
 import {
   Cell,
   Pie,
@@ -25,6 +26,17 @@ import {
   Tooltip,
 } from "recharts";
 import { apiJson } from "@/lib/api-client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetOverlay,
+  SheetTitle,
+} from "@/components/ui/sheet";
 
 type Difficulty = "beginner" | "intermediate" | "advanced";
 type IssueType = "bug" | "feature" | "docs" | "refactor";
@@ -63,6 +75,12 @@ type ProjectResponse = {
   openIssues: ProjectIssue[];
 };
 
+type Message = {
+  role: "user" | "assistant";
+  content: string;
+  transient?: boolean;
+};
+
 const ISSUE_META: Record<IssueType, { label: string; color: string }> = {
   bug: { label: "Bug", color: "#f87171" },
   feature: { label: "Feature", color: "#34d399" },
@@ -74,6 +92,14 @@ const SUGGESTED_QUESTIONS = [
   "How do I set up locally?",
   "What is the architecture?",
   "What conventions should I follow?",
+];
+
+const CHAT_ERROR_PREFIXES = [
+  "Python AI service is not reachable",
+  "The project docs answer could not be loaded",
+  "The project docs answer failed",
+  "Python AI service failed",
+  "Project docs response did not stream",
 ];
 
 function titleCase(value: string) {
@@ -125,15 +151,26 @@ async function fetchProject(projectId: string) {
 
 async function streamProjectAnswer(
   projectId: string,
-  query: string,
+  question: string,
+  history: Message[],
   onToken: (token: string) => void
 ) {
   const response = await fetch(`/api/projects/${projectId}/ask`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ question, history: history.slice(-6) }),
   });
-  if (!response.ok) throw new Error("Failed to ask project docs");
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") ?? "";
+    const errorPayload = contentType.includes("application/json")
+      ? ((await response.json()) as { error?: unknown })
+      : { error: await response.text() };
+    const message =
+      typeof errorPayload.error === "string"
+        ? errorPayload.error
+        : "The project docs answer could not be loaded.";
+    throw new Error(message);
+  }
   if (!response.body) throw new Error("Project docs response did not stream");
 
   const reader = response.body.getReader();
@@ -414,16 +451,211 @@ function IssueCard({
   );
 }
 
+function isGreeting(value: string) {
+  return /^(hi|hello|hey|yo|sup|hii|heyy|thanks|thank you|ok|okay)[.!?]*$/i.test(value.trim());
+}
+
+function greetingReply(projectName: string) {
+  return `Hi. I can help with ${projectName}'s docs, setup, architecture, contribution flow, and open issues.`;
+}
+
+function isChatErrorMessage(message: Message) {
+  return (
+    message.transient === true ||
+    CHAT_ERROR_PREFIXES.some((prefix) => message.content.startsWith(prefix))
+  );
+}
+
+function chatHistoryForApi(messages: Message[]) {
+  return messages
+    .filter((message) => message.content.trim() && !isChatErrorMessage(message))
+    .slice(-6)
+    .map(({ role, content }) => ({ role, content }));
+}
+
+function ProjectDocsChatSheet({
+  projectId,
+  projectName,
+  open,
+  onOpenChange,
+}: {
+  projectId: string;
+  projectName: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [question, setQuestion] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isAsking, setIsAsking] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, isAsking, open]);
+
+  async function askDocs(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed || isAsking) return;
+
+    setQuestion("");
+
+    if (isGreeting(trimmed)) {
+      setMessages((current) => [
+        ...current,
+        { role: "user", content: trimmed },
+        { role: "assistant", content: greetingReply(projectName) },
+      ]);
+      return;
+    }
+
+    const history = chatHistoryForApi(messages);
+    setIsAsking(true);
+    setMessages((current) => [
+      ...current,
+      { role: "user", content: trimmed },
+      { role: "assistant", content: "" },
+    ]);
+
+    try {
+      await streamProjectAnswer(projectId, trimmed, history, (token) => {
+        setMessages((current) => {
+          const next = [...current];
+          const last = next[next.length - 1];
+          if (last?.role === "assistant") {
+            next[next.length - 1] = { ...last, content: last.content + token };
+          }
+          return next;
+        });
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "The project docs answer could not be loaded.";
+      setMessages((current) => {
+        const next = [...current];
+        const last = next[next.length - 1];
+        if (last?.role === "assistant" && !last.content) {
+          next[next.length - 1] = {
+            role: "assistant",
+            content: errorMessage,
+            transient: true,
+          };
+        }
+        return next;
+      });
+    } finally {
+      setIsAsking(false);
+    }
+  }
+
+  function submitQuestion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    askDocs(question);
+  }
+
+  return (
+    <Sheet open={open}>
+      <SheetOverlay open={open} onClick={() => onOpenChange(false)} />
+      <SheetContent open={open}>
+        <SheetHeader>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <SheetTitle>Ask the project docs</SheetTitle>
+              <SheetDescription>
+                Answers use the indexed README, contributing docs, repo stats, and recent chat turns.
+              </SheetDescription>
+            </div>
+            <SheetClose onClick={() => onOpenChange(false)} />
+          </div>
+        </SheetHeader>
+
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+            {messages.length === 0 ? (
+              <div className="rounded-sm border border-zinc-800 bg-zinc-900/40 p-4">
+                <p className="text-sm font-medium leading-6 text-zinc-300">
+                  Pick a starting point or ask directly.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {SUGGESTED_QUESTIONS.map((suggestion) => (
+                    <Button
+                      key={suggestion}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => askDocs(suggestion)}
+                      disabled={isAsking}
+                      className="h-auto min-h-8 justify-start whitespace-normal text-left"
+                    >
+                      {suggestion}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              messages.map((message, index) => (
+                <div
+                  key={`${message.role}-${index}`}
+                  className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    className={`max-w-[85%] rounded-sm border px-3 py-2 text-sm leading-6 ${
+                      message.role === "user"
+                        ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-50"
+                        : "border-zinc-800 bg-zinc-900 text-zinc-100"
+                    }`}
+                  >
+                    {message.content ? (
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                    ) : (
+                      <div className="flex items-center gap-2 text-zinc-400">
+                        <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
+                        Reading project docs...
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
+
+          <form onSubmit={submitQuestion} className="border-t border-zinc-800 p-4">
+            <div className="flex items-center gap-2">
+              <Input
+                value={question}
+                onChange={(event) => setQuestion(event.target.value)}
+                placeholder="Ask a question about this project..."
+                disabled={isAsking}
+                className="h-11"
+              />
+              <Button
+                type="submit"
+                size="icon"
+                disabled={isAsking || question.trim().length === 0}
+                aria-label="Ask project docs"
+                title="Ask"
+                className="h-11 w-11 shrink-0"
+              >
+                {isAsking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              </Button>
+            </div>
+          </form>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 export default function ProjectPage({
   params,
 }: {
   params: Promise<{ projectId: string }>;
 }) {
   const { projectId } = use(params);
-  const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [isAsking, setIsAsking] = useState(false);
-  const [askError, setAskError] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   const projectQuery = useQuery({
     queryKey: ["project", projectId],
@@ -440,34 +672,6 @@ export default function ProjectPage({
           value,
         }))
     : [];
-
-  async function askDocs(value: string) {
-    const trimmed = value.trim();
-    if (!trimmed || isAsking) return;
-
-    setAnswer("");
-    setAskError(false);
-    setIsAsking(true);
-    try {
-      await streamProjectAnswer(projectId, trimmed, (token) => {
-        setAnswer((current) => current + token);
-      });
-    } catch {
-      setAskError(true);
-    } finally {
-      setIsAsking(false);
-    }
-  }
-
-  function submitQuestion(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    askDocs(question);
-  }
-
-  function askSuggested(value: string) {
-    setQuestion(value);
-    askDocs(value);
-  }
 
   if (projectQuery.isLoading) {
     return (
@@ -526,6 +730,15 @@ export default function ProjectPage({
               >
                 <GitHubMark className="h-5 w-5" />
               </a>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setChatOpen(true)}
+                className="h-10"
+              >
+                <MessageSquare className="h-4 w-4" />
+                Ask the project docs
+              </Button>
               <a
                 href="#issues"
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-sm bg-emerald-500 px-4 text-sm font-bold text-zinc-950 transition-colors hover:bg-emerald-400"
@@ -543,6 +756,13 @@ export default function ProjectPage({
             <ProjectStat label="Last commit" value={formatRelativeTime(project.githubStats.lastCommitAt)} icon={History} />
           </div>
         </header>
+
+        <ProjectDocsChatSheet
+          projectId={projectId}
+          projectName={project.project.name}
+          open={chatOpen}
+          onOpenChange={setChatOpen}
+        />
 
         <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-5">
@@ -621,59 +841,6 @@ export default function ProjectPage({
               ))}
             </div>
           </div>
-        </section>
-
-        <section className="rounded-sm border border-zinc-800 bg-zinc-950 p-5">
-          <div className="mb-5 flex flex-col gap-2">
-            <h2 className="text-lg font-semibold text-white">Ask the project docs</h2>
-            <p className="text-sm font-medium text-zinc-300">Answers are retrieved from the indexed README and contributing docs.</p>
-          </div>
-
-          <div className="mb-4 flex flex-wrap gap-2">
-            {SUGGESTED_QUESTIONS.map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                onClick={() => askSuggested(suggestion)}
-                disabled={isAsking}
-                className="rounded-sm border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-xs font-bold text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white disabled:opacity-50"
-              >
-                {suggestion}
-              </button>
-            ))}
-          </div>
-
-          <form onSubmit={submitQuestion} className="flex flex-col gap-3 sm:flex-row">
-            <input
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
-              placeholder="Ask a question about this project..."
-              className="min-h-11 flex-1 rounded-sm border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 placeholder:text-zinc-600 outline-none transition-colors focus:border-emerald-500/50"
-            />
-            <button
-              type="submit"
-              disabled={isAsking || question.trim().length === 0}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-sm bg-emerald-500 px-4 text-sm font-bold text-zinc-950 transition-colors hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
-            >
-              {isAsking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              Ask
-            </button>
-          </form>
-
-          {askError && (
-            <div className="mt-4 rounded-sm border border-red-500/30 bg-red-500/10 p-4 text-sm font-medium text-red-300">
-              The docs answer could not be loaded.
-            </div>
-          )}
-
-          {answer && (
-            <div className="mt-5 rounded-sm border border-emerald-500/20 bg-emerald-500/10 p-4">
-              <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">{answer}</p>
-              <p className="mt-3 border-t border-emerald-500/20 pt-3 text-xs font-bold uppercase tracking-wider text-emerald-300">
-                Answer based on project docs
-              </p>
-            </div>
-          )}
         </section>
 
         <section id="issues" className="scroll-mt-8 space-y-5 pt-8">
