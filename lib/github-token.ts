@@ -38,7 +38,9 @@ export function encryptGithubToken(rawToken: string | null | undefined) {
   if (isEncryptedGithubToken(token)) return token;
 
   const encryptionSecret = getEncryptionSecret();
-  if (!encryptionSecret) return token;
+  if (!encryptionSecret) {
+    throw new Error("GitHub token encryption key is not configured");
+  }
 
   const key = crypto.createHash("sha256").update(encryptionSecret).digest();
   const iv = crypto.randomBytes(12);

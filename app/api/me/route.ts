@@ -75,7 +75,21 @@ async function recoverDbUserFromSession(
       ? `${username}_${githubId}`
       : username;
   const { data: sessionData } = await supabase.auth.getSession();
-  const githubToken = encryptGithubToken(sessionData.session?.provider_token ?? null);
+  let githubToken: string | null = null;
+  try {
+    githubToken = encryptGithubToken(sessionData.session?.provider_token ?? null);
+  } catch (error) {
+    console.error("[api/me] Failed to encrypt GitHub token during account recovery", {
+      githubId,
+      error,
+    });
+    return {
+      error: NextResponse.json(
+        { error: "GitHub token encryption is not configured. Please contact support." },
+        { status: 500 }
+      ),
+    };
+  }
 
   console.warn("[api/me] Recovering missing Prisma user from Supabase session", {
     githubId,

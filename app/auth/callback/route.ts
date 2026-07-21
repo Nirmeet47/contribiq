@@ -27,7 +27,14 @@ export async function GET(request: Request) {
           where: { githubId }
         })
 
-        const githubToken = encryptGithubToken(session.provider_token)
+        let githubToken: string | null = null
+        try {
+          githubToken = encryptGithubToken(session.provider_token)
+        } catch (error) {
+          console.error("[auth/callback] Failed to encrypt GitHub token", { githubId, error })
+          await supabase.auth.signOut()
+          return NextResponse.redirect(`${origin}/auth/auth-code-error`)
+        }
 
         if (!existingUser) {
           // Create new user (First login)

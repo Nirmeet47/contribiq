@@ -29,6 +29,7 @@ export type EnvReport = {
 
 type EnvDefinition = {
   name: string;
+  aliases?: string[];
   label: string;
   category: string;
   required: boolean;
@@ -120,6 +121,15 @@ const envDefinitions: EnvDefinition[] = [
       "Any random string — paste the same value into GitHub repo Settings > Webhooks > Secret",
   },
   {
+    name: "GITHUB_TOKEN_ENCRYPTION_KEY",
+    aliases: ["TOKEN_ENCRYPTION_KEY"],
+    label: "GitHub token encryption key",
+    category: "GitHub",
+    required: true,
+    source:
+      "Set GITHUB_TOKEN_ENCRYPTION_KEY in app secrets. TOKEN_ENCRYPTION_KEY is accepted as a legacy fallback.",
+  },
+  {
     name: "GITHUB_PAT",
     label: "GitHub personal access token",
     category: "GitHub",
@@ -195,6 +205,12 @@ function maskValue(value: string | undefined): string {
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
 }
 
+function getEnvValue(definition: EnvDefinition): string | undefined {
+  return [definition.name, ...(definition.aliases ?? [])]
+    .map((name) => process.env[name])
+    .find((value): value is string => !!value);
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
@@ -206,7 +222,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 function getEnvChecks(): EnvCheck[] {
   return envDefinitions.map((definition) => {
-    const rawValue = process.env[definition.name];
+    const rawValue = getEnvValue(definition);
 
     if (!rawValue) {
       return {
