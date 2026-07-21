@@ -9,8 +9,14 @@ import { NextResponse } from "next/server";
 import { decryptGithubToken } from "@/lib/github-token";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
+
+const ONBOARDING_RATE_LIMIT = {
+  limit: 1,
+  windowSeconds: 5 * 60,
+};
 
 // where the fastapi agent lives
 const AGENT_URL = process.env.AGENT_URL || "http://localhost:8000";
@@ -24,6 +30,22 @@ export async function GET() {
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const rateLimit = await checkRateLimit({
+    key: `onboarding:progress:${user.id}`,
+    limit: ONBOARDING_RATE_LIMIT.limit,
+    windowSeconds: ONBOARDING_RATE_LIMIT.windowSeconds,
+  });
+
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: `Too many requests, try again in ${rateLimit.retryAfterSeconds} seconds` },
+      {
+        status: 429,
+        headers: rateLimitHeaders(rateLimit),
+      }
+    );
   }
 
   // find the user in our db — the agent needs their id and github token
