@@ -1,31 +1,13 @@
-import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { processContributionWithAi } from "@/lib/contribution-ai";
 import { invalidateContributionStats } from "@/lib/contribution-cache";
 import { invalidateAllFeedCaches } from "@/lib/feed-cache";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
+import { isValidSignature } from "@/lib/webhook-signature";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function isValidSignature(rawBody: string, signatureHeader: string | null) {
-  const secret = process.env.GITHUB_WEBHOOK_SECRET;
-  if (!secret || !signatureHeader?.startsWith("sha256=")) return false;
-
-  const signature = signatureHeader.slice("sha256=".length);
-  const expected = crypto
-    .createHmac("sha256", secret)
-    .update(rawBody)
-    .digest("hex");
-
-  const signatureBuffer = Buffer.from(signature, "hex");
-  const expectedBuffer = Buffer.from(expected, "hex");
-
-  if (signatureBuffer.length !== expectedBuffer.length) return false;
-
-  return crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
-}
 
 function issueStateForAction(action: string) {
   if (action === "closed" || action === "deleted" || action === "transferred") {
@@ -142,7 +124,13 @@ async function syncIssueState(payload: GitHubWebhookPayload) {
 export async function POST(request: Request) {
   const rawBody = await request.text();
 
-  if (!isValidSignature(rawBody, request.headers.get("x-hub-signature-256"))) {
+  if (
+    !isValidSignature(
+      rawBody,
+      request.headers.get("x-hub-signature-256"),
+      process.env.GITHUB_WEBHOOK_SECRET
+    )
+  ) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 

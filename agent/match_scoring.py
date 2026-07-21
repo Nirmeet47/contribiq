@@ -30,6 +30,21 @@ SCORE_CONFIG = {
 }
 
 
+def compute_match_score(
+    skill_sim: float,
+    lang_penalty: float,
+    interest_sim: float,
+    diff_score: float,
+    time_fit: float,
+) -> float:
+    return (
+        (skill_sim * lang_penalty) * SCORE_CONFIG["skill_weight"]
+        + interest_sim * SCORE_CONFIG["interest_weight"]
+        + diff_score * SCORE_CONFIG["difficulty_weight"]
+        + time_fit * SCORE_CONFIG["time_fit_weight"]
+    )
+
+
 def score_matches(issue_id: str | None = None, user_id: str | None = None) -> dict[str, int | str]:
     if issue_id and user_id:
         raise ValueError("Provide either issue_id or user_id, not both")
