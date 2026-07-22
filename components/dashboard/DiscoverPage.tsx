@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { DashboardFilterSelect, DashboardMultiSelect } from "@/components/dashboard/DashboardFilterSelect";
 import { ProjectCard } from "@/components/dashboard/ProjectsCatalogPage";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 import { apiGet } from "@/lib/api-client";
 import type { ProjectSummary } from "@/lib/project-serializer";
 
@@ -320,29 +321,13 @@ export function DiscoverPage() {
             </div>
           </div>
           {searchQuery.data && (
-            <div className="flex items-center justify-between border-t border-zinc-900 pt-4">
-              <p className="text-sm font-medium text-zinc-500">
-                Search page {searchQuery.data.pagination.page}
-              </p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  disabled={!searchHasPreviousPage}
-                  onClick={() => setSearchPage((current) => Math.max(1, current - 1))}
-                  className="rounded-sm border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm font-bold text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  disabled={!searchHasNextPage}
-                  onClick={() => setSearchPage((current) => current + 1)}
-                  className="rounded-sm border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm font-bold text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
+            <PaginationControls
+              page={searchQuery.data.pagination.page}
+              hasPreviousPage={searchHasPreviousPage}
+              hasNextPage={searchHasNextPage}
+              label="Search page"
+              onPageChange={setSearchPage}
+            />
           )}
         </section>
       )}
@@ -357,29 +342,13 @@ export function DiscoverPage() {
           </Card>
         )}
         {!projectsQuery.isLoading && !projectsQuery.isError && projectsQuery.data && (
-          <div className="flex items-center justify-between border-t border-zinc-900 pt-4">
-            <p className="text-sm font-medium text-zinc-500">
-              Page {projectsQuery.data?.page ?? projectPage} of {projectsQuery.data?.totalPages ?? 1}
-            </p>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={!projectsQuery.data?.hasPreviousPage}
-                onClick={() => setProjectPage((current) => Math.max(1, current - 1))}
-                className="rounded-sm border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm font-bold text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                disabled={!projectsQuery.data?.hasNextPage}
-                onClick={() => setProjectPage((current) => current + 1)}
-                className="rounded-sm border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm font-bold text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-          </div>
+          <PaginationControls
+            page={projectsQuery.data.page}
+            totalPages={projectsQuery.data.totalPages}
+            hasPreviousPage={projectsQuery.data.hasPreviousPage}
+            hasNextPage={projectsQuery.data.hasNextPage}
+            onPageChange={setProjectPage}
+          />
         )}
       </section>
 
