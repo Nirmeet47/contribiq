@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 type SkillLevel = "strong" | "moderate" | "learning";
 
 const SKILL_LEVELS = new Set<SkillLevel>(["strong", "moderate", "learning"]);
+type TransactionClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
 async function getAuthenticatedGithubId() {
   const supabase = await createClient();
@@ -104,7 +105,7 @@ export async function PATCH(request: Request) {
     const skills = [...skillsByName.values()];
     const skillNames = skills.map((skill) => skill.name);
 
-    const savedSkills = await prisma.$transaction(async (tx) => {
+    const savedSkills = await prisma.$transaction(async (tx: TransactionClient) => {
       const skillProfile =
         dbUser.skillProfile ??
         (await tx.skillProfile.create({
