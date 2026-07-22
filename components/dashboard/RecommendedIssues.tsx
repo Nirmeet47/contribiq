@@ -5,6 +5,7 @@ import {
   Bookmark,
   BookmarkCheck,
   CheckCircle2,
+  ChevronDown,
   Clock,
   GitPullRequest,
   ThumbsDown,
@@ -586,6 +587,7 @@ export function RecommendedIssues() {
   const [languages, setLanguages] = useState<string[]>([]);
   const [sort, setSort] = useState<SortOrder>("desc");
   const [dismissedIssueIds, setDismissedIssueIds] = useState<Set<string>>(() => new Set());
+  const [visibleMatchCount, setVisibleMatchCount] = useState(5);
   const debouncedLanguages = useDebouncedValue(languages, 300);
 
   const skillsQuery = useQuery({
@@ -601,6 +603,8 @@ export function RecommendedIssues() {
   const languageOptions = feedQuery.data?.filters?.languages ?? [];
   const visibleMatches =
     feedQuery.data?.matches.filter((match) => !dismissedIssueIds.has(match.issue.id)) ?? [];
+  const displayedMatches = visibleMatches.slice(0, visibleMatchCount);
+  const hasMoreVisibleMatches = visibleMatchCount < visibleMatches.length;
   const hasActiveFilters = Boolean(difficulty || issueType || languages.length > 0);
   const matchStatusLabel = feedQuery.isLoading
     ? "Checking match status"
@@ -627,7 +631,10 @@ export function RecommendedIssues() {
             <DashboardFilterSelect
               label="Difficulty"
               value={difficulty ?? ""}
-              onChange={(value) => setDifficulty(value || undefined)}
+              onChange={(value) => {
+                setDifficulty(value || undefined);
+                setVisibleMatchCount(5);
+              }}
               options={[
                 { value: "", label: "All difficulty" },
                 ...DIFFICULTIES.map((value) => ({ value, label: titleCase(value) })),
@@ -637,7 +644,10 @@ export function RecommendedIssues() {
             <DashboardFilterSelect
               label="Type"
               value={issueType ?? ""}
-              onChange={(value) => setIssueType(value || undefined)}
+              onChange={(value) => {
+                setIssueType(value || undefined);
+                setVisibleMatchCount(5);
+              }}
               options={[
                 { value: "", label: "All types" },
                 ...ISSUE_TYPES.map((value) => ({ value, label: titleCase(value) })),
@@ -648,7 +658,10 @@ export function RecommendedIssues() {
               label="Languages"
               options={languageOptions}
               value={languages}
-              onChange={setLanguages}
+              onChange={(value) => {
+                setLanguages(value);
+                setVisibleMatchCount(5);
+              }}
               placeholder="All languages"
               searchPlaceholder="Search language"
             />
@@ -657,7 +670,10 @@ export function RecommendedIssues() {
           <DashboardFilterSelect
             label="Sort"
             value={sort}
-            onChange={(value) => setSort((value || "desc") as SortOrder)}
+            onChange={(value) => {
+              setSort((value || "desc") as SortOrder);
+              setVisibleMatchCount(5);
+            }}
             options={[
               { value: "desc", label: "Best match" },
               { value: "asc", label: "Lowest match" },
@@ -706,7 +722,7 @@ export function RecommendedIssues() {
           className="custom-scrollbar h-[calc(100vh-315px)] min-h-[520px] space-y-4 overflow-y-auto pr-2"
           aria-label="Recommended issues"
         >
-          {visibleMatches.map((match) => (
+          {displayedMatches.map((match) => (
             <RecommendedIssueCard
               key={match.id}
               match={match}
@@ -723,8 +739,21 @@ export function RecommendedIssues() {
               }
             />
           ))}
+          {hasMoreVisibleMatches && (
+            <div className="pt-5">
+              <button
+                type="button"
+                onClick={() => setVisibleMatchCount((current) => current + 5)}
+                className="mx-auto flex h-10 w-fit items-center justify-center gap-2 rounded-sm border border-emerald-500/35 bg-emerald-500/5 px-5 text-sm font-bold text-emerald-400 transition-colors hover:border-emerald-400/70 hover:bg-emerald-500/10 hover:text-emerald-300"
+              >
+                <ChevronDown className="h-4 w-4" />
+                Load more
+              </button>
+            </div>
+          )}
         </div>
       )}
+      {visibleMatches.length > 0 && <div className="border-t border-zinc-800" />}
     </section>
   );
 }

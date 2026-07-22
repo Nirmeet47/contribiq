@@ -19,7 +19,7 @@ export const appConfig = {
   feedPageSize: intFromEnv("FEED_PAGE_SIZE", 12),
   feedMinScore: Math.min(floatFromEnv("FEED_MIN_SCORE", 0.5), 1),
   feedSkillOnlyMinScore: Math.min(floatFromEnv("FEED_SKILL_ONLY_MIN_SCORE", 0.65), 1),
-  similarIssuesLimit: intFromEnv("SIMILAR_ISSUES_LIMIT", 5),
+  similarIssuesLimit: intFromEnv("SIMILAR_ISSUES_LIMIT", 25),
 
   // GitHub issue sync pagination. Keep page size within GitHub GraphQL limits.
   issueFetchPageSize: Math.min(intFromEnv("ISSUE_FETCH_PAGE_SIZE", 50), 100),

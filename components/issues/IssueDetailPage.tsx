@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bookmark,
+  ChevronDown,
   Clock,
   ExternalLink,
   FolderGit2,
@@ -14,6 +15,7 @@ import {
   ThumbsDown,
 } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { IssueLoadingSkeleton } from "@/components/issues/IssueLoadingSkeleton";
 import type { IssueDetailResponse } from "@/components/issues/types";
@@ -89,6 +91,7 @@ function TagPill({ children, variant = "default" }: { children: React.ReactNode;
 
 export function IssueDetailPage({ issueId }: { issueId: string }) {
   const queryClient = useQueryClient();
+  const [visibleSimilarCount, setVisibleSimilarCount] = useState(5);
 
   const issueQuery = useQuery({
     queryKey: ["issue", issueId],
@@ -140,6 +143,9 @@ export function IssueDetailPage({ issueId }: { issueId: string }) {
 
   const { issue, match, similarIssues, comments, isWorking } = issueQuery.data;
   const displayedComments = comments.slice(0, 3);
+  const displayedSimilarIssues = similarIssues.slice(0, visibleSimilarCount);
+  const hasMoreSimilarIssues = visibleSimilarCount < similarIssues.length;
+  const visibleCommentCount = Math.max(issue.commentCount, comments.length);
   const matchScore = match ? Math.round(match.score * 100) : null;
   const issueTypeLabel = issue.issueType ? titleCase(issue.issueType) : "Issue";
   const difficultyLabel = issue.difficulty ? titleCase(issue.difficulty) : "Unrated";
@@ -148,6 +154,7 @@ export function IssueDetailPage({ issueId }: { issueId: string }) {
     issue.issueType ? issueTypeLabel.toLowerCase() : null,
     ...issue.labels.slice(0, 3),
   ].filter(Boolean);
+
   return (
     <section className="px-6 py-6 text-zinc-50 sm:px-8 lg:px-10">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -253,7 +260,7 @@ export function IssueDetailPage({ issueId }: { issueId: string }) {
           />
           <StatCard label="Difficulty" value={difficultyLabel} icon={GitPullRequest} />
           <StatCard label="Time estimate" value={issue.estimatedHours !== null ? `${issue.estimatedHours}h` : "N/A"} icon={Clock} />
-          <StatCard label="Comments" value={issue.commentCount.toString()} icon={MessageSquare} />
+          <StatCard label="Comments" value={visibleCommentCount.toString()} icon={MessageSquare} />
         </section>
 
         <section className="grid gap-6 lg:grid-cols-2">
@@ -304,11 +311,16 @@ export function IssueDetailPage({ issueId }: { issueId: string }) {
           </div>
         </section>
 
-        <section className="space-y-4">
-          <h2 className="text-xl font-bold tracking-tight text-white">Similar issues</h2>
+        <section className="space-y-5 pt-8">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight text-white">Similar issues</h2>
+            <p className="mt-2 text-sm font-medium text-zinc-300">
+              Related matched issues from overlapping skills and issue metadata.
+            </p>
+          </div>
           {similarIssues.length > 0 ? (
-            <div className="space-y-4">
-              {similarIssues.map((similarIssue) => {
+            <div className="custom-scrollbar max-h-[760px] space-y-4 overflow-y-auto pr-2">
+                {displayedSimilarIssues.map((similarIssue) => {
                 const similarLogoUrl = `https://github.com/${similarIssue.repo.owner}.png`;
                 const similarReasons = [
                   similarIssue.requiredSkills.length > 0
@@ -443,7 +455,19 @@ export function IssueDetailPage({ issueId }: { issueId: string }) {
                     </div>
                   </article>
                 );
-              })}
+                })}
+              {hasMoreSimilarIssues && (
+                <div className="pt-5">
+                  <button
+                    type="button"
+                    onClick={() => setVisibleSimilarCount((current) => current + 5)}
+                    className="mx-auto flex h-10 w-fit items-center justify-center gap-2 rounded-sm border border-emerald-500/35 bg-emerald-500/5 px-5 text-sm font-bold text-emerald-400 transition-colors hover:border-emerald-400/70 hover:bg-emerald-500/10 hover:text-emerald-300"
+                  >
+                    <ChevronDown className="h-4 w-4" />
+                    Load more
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-8 text-center text-sm font-medium text-zinc-300">
@@ -452,22 +476,43 @@ export function IssueDetailPage({ issueId }: { issueId: string }) {
           )}
         </section>
 
-        <section className="mx-auto max-w-5xl rounded-sm border border-zinc-800 bg-zinc-950 p-5">
-          <h2 className="mb-5 text-lg font-semibold text-white">Comments</h2>
+        <section className="space-y-5 border-t border-zinc-800 pt-8">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight text-white">Comments</h2>
+            <p className="mt-2 text-sm font-medium text-zinc-300">
+              Latest discussion from GitHub.
+            </p>
+          </div>
+          <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-5">
           {displayedComments.length > 0 ? (
             <div className="divide-y divide-zinc-800">
               {displayedComments.map((comment) => (
                 <article key={comment.id} className="py-4 first:pt-0">
-                  <div className="mb-2 flex items-center justify-between gap-3">
+                  <div className="mb-3 flex items-start justify-between gap-4">
                     <a
                       href={comment.author?.githubUrl ?? comment.githubUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-sm font-bold text-white hover:text-emerald-300"
+                      className="flex min-w-0 items-center gap-3 text-white hover:text-emerald-300"
                     >
-                      {comment.author?.login ?? "GitHub user"}
+                      <span
+                        className="h-9 w-9 shrink-0 rounded-sm border border-zinc-800 bg-zinc-900 bg-cover bg-center"
+                        style={{
+                          backgroundImage: comment.author?.avatarUrl
+                            ? `url(${comment.author.avatarUrl})`
+                            : undefined,
+                        }}
+                      />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-bold">
+                          {comment.author?.login ?? "GitHub user"}
+                        </span>
+                        <span className="block text-xs font-medium text-zinc-500">GitHub commenter</span>
+                      </span>
                     </a>
-                    <span className="shrink-0 text-xs font-medium text-zinc-400">{formatDate(comment.createdAt)}</span>
+                    <span className="shrink-0 rounded-sm border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-300">
+                      {formatDate(comment.createdAt)}
+                    </span>
                   </div>
                   <p className="line-clamp-4 whitespace-pre-wrap text-sm leading-6 text-zinc-300">
                     {comment.body || "No comment body provided."}
@@ -484,11 +529,12 @@ export function IssueDetailPage({ issueId }: { issueId: string }) {
             href={issue.githubUrl}
             target="_blank"
             rel="noreferrer"
-            className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-sm border border-zinc-700 bg-zinc-900 text-sm font-bold text-white transition-colors hover:border-emerald-500/60 hover:text-emerald-300"
+            className="mt-5 inline-flex h-10 w-fit items-center justify-center gap-2 rounded-sm border border-zinc-700 bg-zinc-900 px-4 text-sm font-bold text-white transition-colors hover:border-emerald-500/60 hover:text-emerald-300"
           >
+            <GitHubMark className="h-4 w-4" />
             View all on GitHub
-            <ExternalLink className="h-4 w-4" />
           </a>
+          </div>
         </section>
       </div>
     </section>

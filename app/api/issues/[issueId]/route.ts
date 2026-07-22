@@ -111,7 +111,7 @@ async function getSimilarIssues(issueId: string, requiredSkills: string[]) {
       classified: true,
       requiredSkills: { hasSome: requiredSkills },
     },
-    take: appConfig.similarIssuesLimit,
+    take: Math.max(appConfig.similarIssuesLimit, 25),
     select: {
       id: true,
       title: true,
@@ -168,7 +168,7 @@ export async function GET(
   }
 
   const { issueId } = await params;
-  const issueCacheKey = `issue:${issueId}`;
+  const issueCacheKey = `issue:v3:${issueId}`;
   const cachedIssue = await redis.get(issueCacheKey);
   let publicPayload: PublicIssuePayload | null = cachedIssue
     ? JSON.parse(cachedIssue)
