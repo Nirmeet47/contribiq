@@ -16,6 +16,10 @@ const BEGINNER_FRIENDLY_LABELS = new Set([
   "help wanted",
 ]);
 
+type IssueLabelsRow = {
+  labels: string[];
+};
+
 const PACKAGE_TECH_ALIASES: Record<string, string> = {
   "@angular/core": "Angular",
   "@nestjs/core": "NestJS",
@@ -309,7 +313,9 @@ export async function GET(
     project: {
       ...repo,
       contributionFriendliness: calculateContributionFriendliness({
-        openIssueLabels: openIssueLabels.map((issue) => issue.labels),
+        openIssueLabels: (openIssueLabels as IssueLabelsRow[]).map(
+          (issue: IssueLabelsRow) => issue.labels
+        ),
         maintainerScore: repo.maintainerScore,
       }),
     },

@@ -1,4 +1,3 @@
-import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export const issueFeedSelect = {
@@ -25,7 +24,7 @@ export const issueFeedSelect = {
   bookmarks: {
     select: { userId: true },
   },
-} satisfies Prisma.IssueSelect;
+};
 
 export type IssueFeedRecord = {
   id: string;

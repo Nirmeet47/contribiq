@@ -19,20 +19,52 @@ const feedQuerySchema = z.object({
   issueType: z.enum(["bug", "feature", "docs", "refactor"]).optional(),
   languages: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
   sort: z.enum(["desc", "asc"]).default("desc"),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(20).default(5),
 });
 
 type FeedMatch = {
+  id: string;
+  score: number;
+  skillSim: number;
+  interestSim: number;
+  diffScore: number;
   issue: {
     id: string;
     state: "open" | "closed";
     updatedAt: Date;
+    title: string;
+    aiSummary: string | null;
+    difficulty: "beginner" | "intermediate" | "advanced" | null;
+    estimatedHours: number | null;
+    issueType: "bug" | "feature" | "docs" | "refactor" | null;
     githubUrl: string;
+    requiredSkills: string[];
+    bookmarks: Array<{ id: string }>;
     repo: {
       id: string;
       owner: string;
       name: string;
+      fullName: string;
+      categories: string[];
+      maintainerScore: number;
+      activityScore: number;
+      language: string | null;
     };
   };
+};
+
+type UserLanguageSkill = {
+  name: string;
+};
+
+type FeedDbUser = {
+  id: string;
+  interests: string[];
+  timeCommitment: number;
+  skillProfile: {
+    skills: UserLanguageSkill[];
+  } | null;
 };
 
 type GitHubIssueResponse = {
@@ -60,7 +92,7 @@ async function deleteIssueCaches(issueId: string, repoId: string) {
 }
 
 async function getDbUser() {
-  return getCurrentDbUser({
+  const dbUser = await getCurrentDbUser({
     id: true,
     interests: true,
     timeCommitment: true,
@@ -74,10 +106,15 @@ async function getDbUser() {
       },
     },
   });
+
+  return dbUser as FeedDbUser | null;
 }
 
 function getUserLanguageOptions(dbUser: Awaited<ReturnType<typeof getDbUser>>) {
-  const languages = dbUser?.skillProfile?.skills.map((skill) => skill.name) ?? [];
+  const languages =
+    (dbUser?.skillProfile?.skills as UserLanguageSkill[] | undefined)?.map(
+      (skill: UserLanguageSkill) => skill.name
+    ) ?? [];
   const byIdentity = new Map<string, string>();
 
   for (const language of languages) {
@@ -203,15 +240,17 @@ export async function GET(request: Request) {
     issueType: searchParams.get("issueType") || undefined,
     languages: [...new Set(languageParams)],
     sort: searchParams.get("sort") || undefined,
+    page: searchParams.get("page") || undefined,
+    pageSize: searchParams.get("pageSize") || undefined,
   });
 
   if (!parsed.success) {
     return NextResponse.json({ error: z.treeifyError(parsed.error) }, { status: 400 });
   }
 
-  const { difficulty, issueType, languages, sort } = parsed.data;
+  const { difficulty, issueType, languages, sort, page, pageSize } = parsed.data;
   const languageCacheKey = languages.length > 0 ? languages.sort().join(",") : "all";
-  const cacheKey = `feed:${FEED_CACHE_VERSION}:${dbUser.id}:${difficulty ?? "all"}:${issueType ?? "all"}:${languageCacheKey}:${sort}:${appConfig.feedMinScore}:${appConfig.feedSkillOnlyMinScore}`;
+  const cacheKey = `feed:${FEED_CACHE_VERSION}:v2:${dbUser.id}:${difficulty ?? "all"}:${issueType ?? "all"}:${languageCacheKey}:${sort}:${page}:${pageSize}:${appConfig.feedMinScore}:${appConfig.feedSkillOnlyMinScore}`;
   const cached = await getCachedJson<unknown>(cacheKey, "feed");
 
   if (cached) {
@@ -226,6 +265,7 @@ export async function GET(request: Request) {
       matches: [],
       filters: { languages: userLanguageOptions },
       status: { lastMatchedAt },
+      pagination: { page, pageSize, hasNextPage: false },
       reason: "profile_incomplete",
     });
   }
@@ -258,7 +298,8 @@ export async function GET(request: Request) {
       },
     },
     orderBy: { score: sort },
-    take: appConfig.feedPageSize,
+    skip: (page - 1) * pageSize,
+    take: pageSize + 1,
     select: {
       id: true,
       score: true,
@@ -298,7 +339,8 @@ export async function GET(request: Request) {
     },
   });
 
-  const visibleMatches = await validateStaleIssues(matches);
+  const validatedMatches = await validateStaleIssues(matches);
+  const visibleMatches = validatedMatches.slice(0, pageSize);
 
   const payload = {
     filters: {
@@ -306,6 +348,11 @@ export async function GET(request: Request) {
     },
     status: {
       lastMatchedAt,
+    },
+    pagination: {
+      page,
+      pageSize,
+      hasNextPage: validatedMatches.length > pageSize,
     },
     matches: visibleMatches.map((match) => ({
       id: match.id,

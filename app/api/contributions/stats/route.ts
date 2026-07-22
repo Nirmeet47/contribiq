@@ -7,6 +7,18 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
+type ContributionStatsRow = {
+  mergedAt: Date;
+  repoOwner: string;
+  repoName: string;
+  complexity: number | null;
+};
+
+type RepoReachRow = {
+  fullName: string;
+  stars: number;
+};
+
 function utcDateString(date: Date) {
   return date.toISOString().slice(0, 10);
 }
@@ -77,7 +89,7 @@ export async function GET() {
     return NextResponse.json(cached);
   }
 
-  const contributions = await prisma.contribution.findMany({
+  const contributions: ContributionStatsRow[] = await prisma.contribution.findMany({
     where: { userId: dbUser.id },
     select: {
       mergedAt: true,
@@ -88,7 +100,9 @@ export async function GET() {
   });
 
   const uniqueRepoPairs = new Set(
-    contributions.map((contribution) => `${contribution.repoOwner}/${contribution.repoName}`)
+    contributions.map(
+      (contribution: ContributionStatsRow) => `${contribution.repoOwner}/${contribution.repoName}`
+    )
   );
   const fullNames = [...uniqueRepoPairs];
 
@@ -102,9 +116,14 @@ export async function GET() {
         })
       : [];
 
-  const totalReach = repos.reduce((sum, repo) => sum + repo.stars, 0);
+  const totalReach = (repos as RepoReachRow[]).reduce(
+    (sum: number, repo: RepoReachRow) => sum + repo.stars,
+    0
+  );
 
-  const contributionDates = contributions.map((contribution) => utcDateString(contribution.mergedAt));
+  const contributionDates = contributions.map((contribution: ContributionStatsRow) =>
+    utcDateString(contribution.mergedAt)
+  );
   const githubStats = await fetchGitHubContributionStats(dbUser);
   const streakDates =
     githubStats && githubStats.contributionDates.length > 0

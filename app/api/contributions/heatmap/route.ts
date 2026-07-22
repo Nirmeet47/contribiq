@@ -2,9 +2,18 @@ import { NextResponse } from "next/server";
 import { getCurrentDbUser } from "@/lib/auth-user";
 import { buildLocalContributionHeatmap } from "@/lib/contribution-activity";
 import { fetchGitHubContributionStats } from "@/lib/github-contributions";
+import type { GitHubContributionDay } from "@/lib/github-contributions";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
+
+type HeatmapCell = {
+  date: string;
+  count: number;
+  avgComplexity: number;
+  snippet: string;
+  source: string;
+};
 
 export async function GET() {
   const dbUser = await getCurrentDbUser({ id: true, username: true, githubToken: true });
@@ -39,9 +48,9 @@ export async function GET() {
   );
 
   if (githubStats) {
-    const heatmap = githubStats.contributionDays
-      .filter((day) => day.contributionCount > 0)
-      .map((day) => {
+    const heatmap: HeatmapCell[] = githubStats.contributionDays
+      .filter((day: GitHubContributionDay) => day.contributionCount > 0)
+      .map((day: GitHubContributionDay) => {
         const localCell = localByDate.get(day.date);
 
         return {
@@ -54,7 +63,7 @@ export async function GET() {
           source: "github",
         };
       })
-      .sort((a, b) => a.date.localeCompare(b.date));
+      .sort((a: HeatmapCell, b: HeatmapCell) => a.date.localeCompare(b.date));
 
     return NextResponse.json({ heatmap, source: "github" });
   }

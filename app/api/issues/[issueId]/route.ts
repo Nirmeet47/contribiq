@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { appConfig } from "@/lib/app-config";
 import { getCurrentDbUserId } from "@/lib/auth-user";
 import { ISSUE_CACHE_TTL_SECONDS } from "@/lib/cache-constants";
 import { getAppGitHubToken } from "@/lib/github-token";
@@ -26,11 +25,22 @@ type PublicIssuePayload = {
   issue: NonNullable<Awaited<ReturnType<typeof getPublicIssue>>>;
   similarIssues: Awaited<ReturnType<typeof getSimilarIssues>>;
   comments: Awaited<ReturnType<typeof fetchIssueComments>>;
+  similarPagination: {
+    page: number;
+    pageSize: number;
+    hasNextPage: boolean;
+  };
 };
 
 function issueNumberFromUrl(url: string) {
   const match = url.match(/\/issues\/(\d+)(?:$|[?#])/);
   return match ? Number.parseInt(match[1], 10) : null;
+}
+
+function parsePositiveInt(value: string | null, fallback: number, max: number) {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(parsed, max);
 }
 
 async function fetchIssueComments(owner: string, repo: string, issueUrl: string) {
@@ -40,7 +50,7 @@ async function fetchIssueComments(owner: string, repo: string, issueUrl: string)
   if (!issueNumber || !token) return [];
 
   const response = await fetch(
-    `${GITHUB_REST_URL}/repos/${owner}/${repo}/issues/${issueNumber}/comments?per_page=20`,
+    `${GITHUB_REST_URL}/repos/${owner}/${repo}/issues/${issueNumber}/comments?per_page=3`,
     {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -103,7 +113,7 @@ async function getPublicIssue(issueId: string) {
   });
 }
 
-async function getSimilarIssues(issueId: string, requiredSkills: string[]) {
+async function getSimilarIssues(issueId: string, requiredSkills: string[], page: number, pageSize: number) {
   return prisma.issue.findMany({
     where: {
       id: { not: issueId },
@@ -111,15 +121,25 @@ async function getSimilarIssues(issueId: string, requiredSkills: string[]) {
       classified: true,
       requiredSkills: { hasSome: requiredSkills },
     },
-    take: appConfig.similarIssuesLimit,
+    skip: (page - 1) * pageSize,
+    take: pageSize + 1,
     select: {
       id: true,
       title: true,
       aiSummary: true,
       difficulty: true,
+      estimatedHours: true,
       issueType: true,
       githubUrl: true,
       requiredSkills: true,
+      repo: {
+        select: {
+          id: true,
+          owner: true,
+          name: true,
+          maintainerScore: true,
+        },
+      },
     },
   });
 }
@@ -150,7 +170,7 @@ async function getUserIssueState(userId: string, issueId: string) {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ issueId: string }> }
 ) {
   const userId = await getCurrentDbUserId();
@@ -159,7 +179,10 @@ export async function GET(
   }
 
   const { issueId } = await params;
-  const issueCacheKey = `issue:${issueId}`;
+  const { searchParams } = new URL(request.url);
+  const similarPage = parsePositiveInt(searchParams.get("similarPage"), 1, 100);
+  const similarPageSize = parsePositiveInt(searchParams.get("similarPageSize"), 5, 10);
+  const issueCacheKey = `issue:v4:${issueId}:similar:${similarPage}:${similarPageSize}`;
   const cachedIssue = await redis.get(issueCacheKey);
   let publicPayload: PublicIssuePayload | null = cachedIssue
     ? JSON.parse(cachedIssue)
@@ -172,12 +195,22 @@ export async function GET(
       return NextResponse.json({ error: "Issue not found" }, { status: 404 });
     }
 
-    const [similarIssues, comments] = await Promise.all([
-      getSimilarIssues(issueId, issue.requiredSkills),
+    const [similarIssueRows, comments] = await Promise.all([
+      getSimilarIssues(issueId, issue.requiredSkills, similarPage, similarPageSize),
       fetchIssueComments(issue.repo.owner, issue.repo.name, issue.githubUrl),
     ]);
+    const similarIssues = similarIssueRows.slice(0, similarPageSize);
 
-    publicPayload = { issue, similarIssues, comments };
+    publicPayload = {
+      issue,
+      similarIssues,
+      comments,
+      similarPagination: {
+        page: similarPage,
+        pageSize: similarPageSize,
+        hasNextPage: similarIssueRows.length > similarPageSize,
+      },
+    };
     await redis.set(issueCacheKey, JSON.stringify(publicPayload), "EX", ISSUE_CACHE_TTL_SECONDS);
   }
 

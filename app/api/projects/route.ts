@@ -1,19 +1,60 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { pageQuerySchema } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 import { serializeProjectSummary } from "@/lib/project-serializer";
 import { getRepoLanguageCatalog } from "@/lib/repo-language-cache";
 
 export const dynamic = "force-dynamic";
-const PAGE_SIZE = 9;
+const DEFAULT_PAGE_SIZE = 9;
+const MAX_PAGE_SIZE = 60;
+
+type ProjectListRepo = {
+  id: string;
+  owner: string;
+  name: string;
+  fullName: string;
+  description: string | null;
+  categories: string[];
+  stars: number;
+  language: string | null;
+  maintainerScore: number;
+  activityScore: number;
+  lastFetchedAt: Date | null;
+  updatedAt: Date;
+};
+
+type IssueCountRow = {
+  repoId: string;
+  _count: number;
+};
+
+type CategoryRow = {
+  categories: string[];
+};
 
 const projectQuerySchema = z.object({
   q: z.string().trim().max(80).optional(),
   category: z.string().trim().max(40).optional(),
   languages: z.array(z.string().trim().min(1).max(40)).max(50).default([]),
-  sort: z.enum(["activity", "stars", "issues", "health", "name"]).default("activity"),
-  page: z.coerce.number().int().min(1).default(1),
+  difficulty: z.enum(["beginner", "intermediate", "advanced"]).optional(),
+  minResponsiveness: z.coerce.number().min(0).max(1).optional(),
+  sort: z
+    .enum(["activity", "activityScore", "stars", "issues", "health", "name", "maintainerScore"])
+    .default("activity"),
+  ...pageQuerySchema(DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE),
 });
+
+function orderProjects(projects: ReturnType<typeof serializeProjectSummary>[], sort: z.infer<typeof projectQuerySchema>["sort"]) {
+  return projects.sort((a, b) => {
+    if (sort === "stars") return b.stars - a.stars;
+    if (sort === "issues") return b.openIssueCount - a.openIssueCount;
+    if (sort === "health") return b.healthScore - a.healthScore;
+    if (sort === "name") return a.fullName.localeCompare(b.fullName);
+    if (sort === "maintainerScore") return b.maintainerScore - a.maintainerScore;
+    return b.activityScore - a.activityScore || b.openIssueCount - a.openIssueCount;
+  });
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -27,15 +68,27 @@ export async function GET(request: Request) {
     q: searchParams.get("q") || undefined,
     category: searchParams.get("category") || undefined,
     languages: [...new Set(languageParams)],
+    difficulty: searchParams.get("difficulty") || undefined,
+    minResponsiveness: searchParams.get("minResponsiveness") || undefined,
     sort: searchParams.get("sort") || undefined,
     page: searchParams.get("page") || undefined,
+    pageSize: searchParams.get("pageSize") || undefined,
   });
 
   if (!parsed.success) {
     return NextResponse.json({ error: z.treeifyError(parsed.error) }, { status: 400 });
   }
 
-  const { q, category, languages: selectedLanguages, sort, page } = parsed.data;
+  const {
+    q,
+    category,
+    languages: selectedLanguages,
+    difficulty,
+    minResponsiveness,
+    sort,
+    page,
+    pageSize,
+  } = parsed.data;
   const where = {
     ...(q
       ? {
@@ -51,9 +104,20 @@ export async function GET(request: Request) {
     ...(selectedLanguages.length > 0
       ? { language: { in: selectedLanguages, mode: "insensitive" as const } }
       : {}),
+    ...(minResponsiveness !== undefined
+      ? { maintainerScore: { gte: minResponsiveness } }
+      : {}),
+    ...(difficulty
+      ? { issues: { some: { state: "open" as const, classified: true, difficulty } } }
+      : {}),
   };
 
-  const repos = await prisma.repo.findMany({
+  const total = await prisma.repo.count({ where });
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+
+  const repos: ProjectListRepo[] = await prisma.repo.findMany({
     where,
     select: {
       id: true,
@@ -69,9 +133,11 @@ export async function GET(request: Request) {
       lastFetchedAt: true,
       updatedAt: true,
     },
+    skip: start,
+    take: pageSize,
   });
 
-  const repoIds = repos.map((repo) => repo.id);
+  const repoIds = repos.map((repo: ProjectListRepo) => repo.id);
   const [openIssueCounts, classifiedIssueCounts, languages, categoryRows] = await Promise.all([
     prisma.issue.groupBy({
       by: ["repoId"],
@@ -89,45 +155,38 @@ export async function GET(request: Request) {
     }),
   ]);
 
-  const openCountByRepo = new Map(openIssueCounts.map((item) => [item.repoId, item._count]));
+  const openCountByRepo = new Map(
+    (openIssueCounts as IssueCountRow[]).map((item: IssueCountRow) => [item.repoId, item._count])
+  );
   const classifiedCountByRepo = new Map(
-    classifiedIssueCounts.map((item) => [item.repoId, item._count])
+    (classifiedIssueCounts as IssueCountRow[]).map((item: IssueCountRow) => [
+      item.repoId,
+      item._count,
+    ])
   );
 
-  const projects = repos
-    .map((repo) =>
+  const projects = orderProjects(repos
+    .map((repo: ProjectListRepo) =>
       serializeProjectSummary(repo, {
         openIssueCount: openCountByRepo.get(repo.id) ?? 0,
         classifiedIssueCount: classifiedCountByRepo.get(repo.id) ?? 0,
       })
-    )
-    .sort((a, b) => {
-      if (sort === "stars") return b.stars - a.stars;
-      if (sort === "issues") return b.openIssueCount - a.openIssueCount;
-      if (sort === "health") return b.healthScore - a.healthScore;
-      if (sort === "name") return a.fullName.localeCompare(b.fullName);
-      return b.activityScore - a.activityScore || b.openIssueCount - a.openIssueCount;
-    });
+    ), sort);
 
   const categories = Array.from(
-    new Set(categoryRows.flatMap((repo) => repo.categories).filter(Boolean))
+    new Set((categoryRows as CategoryRow[]).flatMap((repo: CategoryRow) => repo.categories).filter(Boolean))
   ).sort((a, b) => a.localeCompare(b));
-  const total = projects.length;
   const totalOpenIssues = projects.reduce((sum, repo) => sum + repo.openIssueCount, 0);
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const start = (currentPage - 1) * PAGE_SIZE;
-  const paginatedProjects = projects.slice(start, start + PAGE_SIZE);
 
   return NextResponse.json({
     total,
     page: currentPage,
-    pageSize: PAGE_SIZE,
+    pageSize,
     totalPages,
     totalOpenIssues,
     hasNextPage: currentPage < totalPages,
     hasPreviousPage: currentPage > 1,
-    projects: paginatedProjects,
+    projects,
     filters: {
       languages,
       categories,

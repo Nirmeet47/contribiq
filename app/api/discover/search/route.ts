@@ -6,12 +6,14 @@ import {
   serializeIssueForFeed,
   type IssueFeedRecord,
 } from "@/lib/issue-feed";
+import { pageQuerySchema } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 const searchSchema = z.object({
   q: z.string().trim().min(1).max(80),
+  ...pageQuerySchema(20, 50),
 });
 
 type IssueHit = { id: string; score: number };
@@ -32,13 +34,20 @@ type ProjectHit = {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const parsed = searchSchema.safeParse({ q: searchParams.get("q") || undefined });
+  const parsed = searchSchema.safeParse({
+    q: searchParams.get("q") || undefined,
+    page: searchParams.get("page") || undefined,
+    pageSize: searchParams.get("pageSize") || undefined,
+  });
 
   if (!parsed.success) {
     return NextResponse.json({ error: z.treeifyError(parsed.error) }, { status: 400 });
   }
 
   const query = parsed.data.q;
+  const { page, pageSize } = parsed.data;
+  const skip = (page - 1) * pageSize;
+  const pageLimit = pageSize + 1;
   const queryLike = `%${query}%`;
   const userId = await getOptionalDbUserId();
   const [issueHits, projects] = await Promise.all([
@@ -70,7 +79,8 @@ export async function GET(request: Request) {
           )
         )
       ORDER BY score DESC, i."createdAt" DESC
-      LIMIT 20
+      OFFSET ${skip}
+      LIMIT ${pageLimit}
     `,
     prisma.$queryRaw<ProjectHit[]>`
       SELECT id, owner, name, "fullName", description, categories, stars, language,
@@ -90,11 +100,14 @@ export async function GET(request: Request) {
         OR COALESCE(language, '') ILIKE ${queryLike}
         OR categories::text ILIKE ${queryLike}
       ORDER BY score DESC, stars DESC
-      LIMIT 20
+      OFFSET ${skip}
+      LIMIT ${pageLimit}
     `,
   ]);
+  const visibleIssueHits: IssueHit[] = issueHits.slice(0, pageSize);
+  const visibleProjects: ProjectHit[] = projects.slice(0, pageSize);
 
-  const issueIds = issueHits.map((hit) => hit.id);
+  const issueIds: string[] = visibleIssueHits.map((hit: IssueHit) => hit.id);
   const issues =
     issueIds.length > 0
       ? await prisma.issue.findMany({
@@ -106,9 +119,21 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     issues: issueIds
-      .map((id) => issueById.get(id))
+      .map((id: string) => issueById.get(id))
       .filter((issue): issue is NonNullable<typeof issue> => Boolean(issue))
-      .map((issue) => serializeIssueForFeed(issue, userId)),
-    projects,
+      .map((issue: IssueFeedRecord) => serializeIssueForFeed(issue, userId)),
+    projects: visibleProjects,
+    pagination: {
+      page,
+      pageSize,
+      issues: {
+        hasNextPage: issueHits.length > pageSize,
+        hasPreviousPage: page > 1,
+      },
+      projects: {
+        hasNextPage: projects.length > pageSize,
+        hasPreviousPage: page > 1,
+      },
+    },
   });
 }

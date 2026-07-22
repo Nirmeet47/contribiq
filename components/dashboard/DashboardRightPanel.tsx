@@ -3,7 +3,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { DashboardStats } from "./DashboardStats";
 import { SkillRadar, type SkillLevel } from "./SkillRadar";
-import { TrendingInStack } from "./TrendingInStack";
 import { apiGet } from "@/lib/api-client";
 
 type Skill = {
@@ -63,7 +62,6 @@ export function DashboardRightPanel() {
       level: skill.level,
       confidence: Math.round(skill.confidence * 100),
     }));
-  const skillQueryKey = topSkills.map((skill) => `${skill.skill}:${skill.level}`);
 
   const bookmarksQuery = useQuery({
     queryKey: ["bookmarks"],
@@ -85,7 +83,6 @@ export function DashboardRightPanel() {
           totalPRs={contributionStatsQuery.data?.totalPRs ?? 0}
           currentStreak={contributionStatsQuery.data?.currentStreak ?? 0}
         />
-        <TrendingInStack enabled={meQuery.isSuccess} skillQueryKey={skillQueryKey} />
       </div>
     </aside>
   );

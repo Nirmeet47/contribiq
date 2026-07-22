@@ -4,6 +4,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DashboardFilterSelect, DashboardMultiSelect } from "@/components/dashboard/DashboardFilterSelect";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 import {
   Card,
   CardContent,
@@ -335,29 +336,13 @@ export function ProjectsCatalogPage() {
         )}
 
         {!projectsQuery.isLoading && !projectsQuery.isError && projects.length > 0 && (
-          <div className="flex flex-col gap-3 border-t border-zinc-900 pt-5 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm font-medium text-zinc-500">
-              Page {projectsQuery.data?.page ?? page} of {projectsQuery.data?.totalPages ?? 1}
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!projectsQuery.data?.hasPreviousPage}
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
-              >
-                Previous
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!projectsQuery.data?.hasNextPage}
-                onClick={() => setPage((current) => current + 1)}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
+          <PaginationControls
+            page={projectsQuery.data?.page ?? page}
+            totalPages={projectsQuery.data?.totalPages ?? 1}
+            hasPreviousPage={Boolean(projectsQuery.data?.hasPreviousPage)}
+            hasNextPage={Boolean(projectsQuery.data?.hasNextPage)}
+            onPageChange={setPage}
+          />
         )}
     </section>
   );
