@@ -58,6 +58,15 @@ type UserLanguageSkill = {
   name: string;
 };
 
+type FeedDbUser = {
+  id: string;
+  interests: string[];
+  timeCommitment: number;
+  skillProfile: {
+    skills: UserLanguageSkill[];
+  } | null;
+};
+
 type GitHubIssueResponse = {
   state?: "open" | "closed";
   title?: string;
@@ -83,7 +92,7 @@ async function deleteIssueCaches(issueId: string, repoId: string) {
 }
 
 async function getDbUser() {
-  return getCurrentDbUser({
+  const dbUser = await getCurrentDbUser({
     id: true,
     interests: true,
     timeCommitment: true,
@@ -97,6 +106,8 @@ async function getDbUser() {
       },
     },
   });
+
+  return dbUser as FeedDbUser | null;
 }
 
 function getUserLanguageOptions(dbUser: Awaited<ReturnType<typeof getDbUser>>) {

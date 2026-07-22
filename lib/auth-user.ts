@@ -1,6 +1,8 @@
-import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/utils/supabase/server";
+
+type UserFindUniqueArgs = NonNullable<Parameters<typeof prisma.user.findUnique>[0]>;
+type UserSelect = UserFindUniqueArgs["select"];
 
 export async function getCurrentAuthUser() {
   const supabase = await createClient();
@@ -13,7 +15,7 @@ export async function getCurrentAuthUser() {
   return user;
 }
 
-export async function getCurrentDbUser<TSelect extends Prisma.UserSelect>(
+export async function getCurrentDbUser<TSelect extends UserSelect>(
   select: TSelect
 ) {
   const user = await getCurrentAuthUser();
