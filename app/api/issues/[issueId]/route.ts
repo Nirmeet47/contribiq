@@ -40,7 +40,7 @@ async function fetchIssueComments(owner: string, repo: string, issueUrl: string)
   if (!issueNumber || !token) return [];
 
   const response = await fetch(
-    `${GITHUB_REST_URL}/repos/${owner}/${repo}/issues/${issueNumber}/comments?per_page=20`,
+    `${GITHUB_REST_URL}/repos/${owner}/${repo}/issues/${issueNumber}/comments?per_page=3`,
     {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -117,9 +117,18 @@ async function getSimilarIssues(issueId: string, requiredSkills: string[]) {
       title: true,
       aiSummary: true,
       difficulty: true,
+      estimatedHours: true,
       issueType: true,
       githubUrl: true,
       requiredSkills: true,
+      repo: {
+        select: {
+          id: true,
+          owner: true,
+          name: true,
+          maintainerScore: true,
+        },
+      },
     },
   });
 }

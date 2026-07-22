@@ -39,9 +39,16 @@ export type IssueDetailResponse = {
     title: string;
     aiSummary: string | null;
     difficulty: Difficulty | null;
+    estimatedHours: number | null;
     issueType: IssueType | null;
     githubUrl: string;
     requiredSkills: string[];
+    repo: {
+      id: string;
+      owner: string;
+      name: string;
+      maintainerScore: number;
+    };
   }>;
   comments: Array<{
     id: number;
