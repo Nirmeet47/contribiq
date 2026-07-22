@@ -10,6 +10,31 @@ const bookmarkSchema = z.object({
   issueId: z.string().min(1),
 });
 
+type BookmarkListItem = {
+  id: string;
+  createdAt: Date;
+  issue: {
+    id: string;
+    title: string;
+    aiSummary: string | null;
+    difficulty: "beginner" | "intermediate" | "advanced" | null;
+    estimatedHours: number | null;
+    issueType: "bug" | "feature" | "docs" | "refactor" | null;
+    githubUrl: string;
+    requiredSkills: string[];
+    state: "open" | "closed";
+    repo: {
+      id: string;
+      owner: string;
+      name: string;
+      fullName: string;
+      language: string | null;
+      maintainerScore: number;
+    };
+    workingOn: Array<{ id: string }>;
+  };
+};
+
 function startOfCurrentUtcWeek() {
   const now = new Date();
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -74,7 +99,7 @@ export async function GET() {
     count: totalBookmarks,
     totalBookmarks,
     weeklyBookmarks,
-    bookmarks: bookmarks.map((bookmark) => ({
+    bookmarks: (bookmarks as BookmarkListItem[]).map((bookmark) => ({
       id: bookmark.id,
       createdAt: bookmark.createdAt,
       issue: {

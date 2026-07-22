@@ -41,12 +41,31 @@ type ProjectSearchResult = Pick<
   "id" | "fullName" | "description" | "language" | "stars"
 >;
 
-type SearchResponse = { issues: Issue[]; projects: ProjectSearchResult[] };
-type TrendingResponse = { issues: Array<{ bookmarkCount: number; issue: Issue }> };
+type Pagination = {
+  page: number;
+  pageSize: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+};
+type SearchResponse = {
+  issues: Issue[];
+  projects: ProjectSearchResult[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    issues: Pagination;
+    projects: Pagination;
+  };
+};
 type ProjectDirectoryResponse = {
   projects: ProjectSummary[];
-  recentProjects: ProjectSummary[];
   filters: { languages: string[] };
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
 };
 
 function titleCase(value: string) {
@@ -152,28 +171,31 @@ export function DiscoverPage() {
   const [difficulty, setDifficulty] = useState("");
   const [minResponsiveness, setMinResponsiveness] = useState("");
   const [sort, setSort] = useState<RepoSort>("activityScore");
+  const [searchPage, setSearchPage] = useState(1);
+  const [projectPage, setProjectPage] = useState(1);
   const debouncedSearch = useDebouncedValue(search, 300);
   const debouncedLanguages = useDebouncedValue(languages, 250);
 
   const searchQuery = useQuery({
-    queryKey: ["discover-search", debouncedSearch],
-    queryFn: () => fetchJson<SearchResponse>(`/api/discover/search?q=${encodeURIComponent(debouncedSearch)}`),
+    queryKey: ["discover-search", debouncedSearch, searchPage],
+    queryFn: () => fetchJson<SearchResponse>(
+      `/api/discover/search?q=${encodeURIComponent(debouncedSearch)}&page=${searchPage}`,
+    ),
     enabled: debouncedSearch.trim().length > 0,
-  });
-
-  const trendingQuery = useQuery({
-    queryKey: ["discover-trending"],
-    queryFn: () => fetchJson<TrendingResponse>("/api/discover/trending"),
+    placeholderData: keepPreviousData,
   });
 
   const projectsQuery = useQuery({
-    queryKey: ["projects-directory", { languages: debouncedLanguages, difficulty, minResponsiveness, sort }],
+    queryKey: [
+      "projects",
+      { languages: debouncedLanguages, difficulty, minResponsiveness, sort, projectPage },
+    ],
     queryFn: () => {
-      const params = new URLSearchParams({ sort });
+      const params = new URLSearchParams({ sort, page: projectPage.toString() });
       for (const language of debouncedLanguages) params.append("language", language);
       if (difficulty) params.set("difficulty", difficulty);
       if (minResponsiveness) params.set("minResponsiveness", minResponsiveness);
-      return fetchJson<ProjectDirectoryResponse>(`/api/projects/directory?${params.toString()}`);
+      return fetchJson<ProjectDirectoryResponse>(`/api/projects?${params.toString()}`);
     },
     placeholderData: keepPreviousData,
   });
@@ -181,7 +203,12 @@ export function DiscoverPage() {
   const searchIssues = searchQuery.data?.issues ?? [];
   const searchProjects = searchQuery.data?.projects ?? [];
   const directoryProjects = projectsQuery.data?.projects ?? [];
-  const trendingIssues = trendingQuery.data?.issues ?? [];
+  const searchHasPreviousPage = Boolean(
+    searchQuery.data?.pagination.issues.hasPreviousPage || searchQuery.data?.pagination.projects.hasPreviousPage,
+  );
+  const searchHasNextPage = Boolean(
+    searchQuery.data?.pagination.issues.hasNextPage || searchQuery.data?.pagination.projects.hasNextPage,
+  );
 
   return (
     <section className="mx-auto max-w-7xl space-y-6 px-6 py-8">
@@ -211,7 +238,10 @@ export function DiscoverPage() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-600" />
             <input
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setSearchPage(1);
+              }}
               placeholder="Search issues, summaries, or repos"
               className="h-9 w-full rounded-sm border border-zinc-800 bg-zinc-900 pl-9 pr-3 text-sm font-medium text-zinc-200 outline-none transition-colors placeholder:text-zinc-600 hover:border-zinc-700 focus:border-emerald-500/60"
             />
@@ -220,7 +250,10 @@ export function DiscoverPage() {
           <div className="flex flex-[0_1_auto] flex-wrap items-center gap-3">
             <DashboardMultiSelect
               value={languages}
-              onChange={setLanguages}
+              onChange={(value) => {
+                setLanguages(value);
+                setProjectPage(1);
+              }}
               options={projectsQuery.data?.filters.languages ?? []}
               placeholder="All languages"
               searchPlaceholder="Search language"
@@ -228,7 +261,10 @@ export function DiscoverPage() {
             />
             <DashboardFilterSelect
               value={difficulty}
-              onChange={setDifficulty}
+              onChange={(value) => {
+                setDifficulty(value);
+                setProjectPage(1);
+              }}
               options={[
                 { value: "", label: "All difficulty" },
                 { value: "beginner", label: "Beginner" },
@@ -239,7 +275,10 @@ export function DiscoverPage() {
             />
             <DashboardFilterSelect
               value={minResponsiveness}
-              onChange={setMinResponsiveness}
+              onChange={(value) => {
+                setMinResponsiveness(value);
+                setProjectPage(1);
+              }}
               options={[
                 { value: "", label: "Any responsiveness" },
                 { value: "0.4", label: "40%+" },
@@ -249,7 +288,10 @@ export function DiscoverPage() {
             />
             <DashboardFilterSelect<RepoSort>
               value={sort}
-              onChange={(value) => setSort((value || "activityScore") as RepoSort)}
+              onChange={(value) => {
+                setSort((value || "activityScore") as RepoSort);
+                setProjectPage(1);
+              }}
               options={[
                 { value: "activityScore", label: "Activity" },
                 { value: "maintainerScore", label: "Responsiveness" },
@@ -262,43 +304,85 @@ export function DiscoverPage() {
       </Card>
 
       {debouncedSearch && (
-        <section className="grid gap-5 lg:grid-cols-2">
-          <div className="space-y-3">
-            <h2 className="text-lg font-bold text-zinc-100">Matching issues</h2>
-            {searchIssues.length > 0 ? searchIssues.map((issue) => <IssueCard key={issue.id} issue={issue} />) : (
-              <p className="rounded-sm border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-500">No issues found.</p>
-            )}
+        <section className="space-y-4">
+          <div className="grid gap-5 lg:grid-cols-2">
+            <div className="space-y-3">
+              <h2 className="text-lg font-bold text-zinc-100">Matching issues</h2>
+              {searchIssues.length > 0 ? searchIssues.map((issue) => <IssueCard key={issue.id} issue={issue} />) : (
+                <p className="rounded-sm border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-500">No issues found.</p>
+              )}
+            </div>
+            <div className="space-y-3">
+              <h2 className="text-lg font-bold text-zinc-100">Matching projects</h2>
+              {searchProjects.length > 0 ? searchProjects.map((project) => <ProjectMiniCard key={project.id} project={project} />) : (
+                <p className="rounded-sm border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-500">No projects found.</p>
+              )}
+            </div>
           </div>
-          <div className="space-y-3">
-            <h2 className="text-lg font-bold text-zinc-100">Matching projects</h2>
-            {searchProjects.length > 0 ? searchProjects.map((project) => <ProjectMiniCard key={project.id} project={project} />) : (
-              <p className="rounded-sm border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-500">No projects found.</p>
-            )}
-          </div>
+          {searchQuery.data && (
+            <div className="flex items-center justify-between border-t border-zinc-900 pt-4">
+              <p className="text-sm font-medium text-zinc-500">
+                Search page {searchQuery.data.pagination.page}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={!searchHasPreviousPage}
+                  onClick={() => setSearchPage((current) => Math.max(1, current - 1))}
+                  className="rounded-sm border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm font-bold text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  disabled={!searchHasNextPage}
+                  onClick={() => setSearchPage((current) => current + 1)}
+                  className="rounded-sm border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm font-bold text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </section>
       )}
 
       <section className="space-y-4">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {directoryProjects.slice(0, 9).map((project) => <ProjectCard key={project.id} project={project} />)}
+          {directoryProjects.map((project) => <ProjectCard key={project.id} project={project} />)}
         </div>
         {!projectsQuery.isLoading && directoryProjects.length === 0 && (
           <Card className="p-8 text-center text-sm font-medium text-zinc-500">
             No projects match these filters.
           </Card>
         )}
+        {!projectsQuery.isLoading && !projectsQuery.isError && projectsQuery.data && (
+          <div className="flex items-center justify-between border-t border-zinc-900 pt-4">
+            <p className="text-sm font-medium text-zinc-500">
+              Page {projectsQuery.data?.page ?? projectPage} of {projectsQuery.data?.totalPages ?? 1}
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={!projectsQuery.data?.hasPreviousPage}
+                onClick={() => setProjectPage((current) => Math.max(1, current - 1))}
+                className="rounded-sm border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm font-bold text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                disabled={!projectsQuery.data?.hasNextPage}
+                onClick={() => setProjectPage((current) => current + 1)}
+                className="rounded-sm border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm font-bold text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
-      {trendingIssues.length > 0 && (
-        <section className="space-y-4">
-          <h2 className="text-lg font-bold text-zinc-100">Trending issues this week</h2>
-          <div className="grid gap-4 lg:grid-cols-3">
-            {trendingIssues.map((item) => (
-              <IssueCard key={item.issue.id} issue={item.issue} badge={`${item.bookmarkCount} saves`} />
-            ))}
-          </div>
-        </section>
-      )}
     </section>
   );
 }

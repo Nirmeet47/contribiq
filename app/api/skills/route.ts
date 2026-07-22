@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { SkillLevel } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { refreshSkillEmbeddingForUser, scoreMatchesForUser } from "@/lib/ai-api";
 import { invalidateUserFeedCaches } from "@/lib/feed-cache";
 import { prisma } from "@/lib/prisma";
@@ -7,6 +7,8 @@ import { canonicalizeSkills, isLanguageSkill, skillIdentity } from "@/lib/skills
 import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
+
+type SkillLevel = "strong" | "moderate" | "learning";
 
 const SKILL_LEVELS = new Set<SkillLevel>(["strong", "moderate", "learning"]);
 
@@ -103,7 +105,7 @@ export async function PATCH(request: Request) {
     const skills = [...skillsByName.values()];
     const skillNames = skills.map((skill) => skill.name);
 
-    const savedSkills = await prisma.$transaction(async (tx) => {
+    const savedSkills = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const skillProfile =
         dbUser.skillProfile ??
         (await tx.skillProfile.create({

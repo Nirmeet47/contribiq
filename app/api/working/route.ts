@@ -4,6 +4,28 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
+type WorkingItem = {
+  id: string;
+  createdAt: Date;
+  issue: {
+    id: string;
+    title: string;
+    aiSummary: string | null;
+    difficulty: "beginner" | "intermediate" | "advanced" | null;
+    estimatedHours: number | null;
+    issueType: "bug" | "feature" | "docs" | "refactor" | null;
+    githubUrl: string;
+    requiredSkills: string[];
+    repo: {
+      id: string;
+      owner: string;
+      name: string;
+      fullName: string;
+      language: string | null;
+    };
+  };
+};
+
 export async function GET() {
   const userId = await getCurrentDbUserId();
   if (!userId) {
@@ -45,7 +67,7 @@ export async function GET() {
 
   return NextResponse.json({
     count: items.length,
-    items: items.map((item) => ({
+    items: (items as WorkingItem[]).map((item: WorkingItem) => ({
       id: item.id,
       createdAt: item.createdAt,
       issue: item.issue,

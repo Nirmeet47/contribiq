@@ -1,4 +1,4 @@
-import type { SkillLevel } from "@prisma/client";
+export type SkillLevel = "strong" | "moderate" | "learning";
 
 export type CanonicalSkillInput = {
   name: string;

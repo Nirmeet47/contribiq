@@ -22,17 +22,38 @@ const feedQuerySchema = z.object({
 });
 
 type FeedMatch = {
+  id: string;
+  score: number;
+  skillSim: number;
+  interestSim: number;
+  diffScore: number;
   issue: {
     id: string;
     state: "open" | "closed";
     updatedAt: Date;
+    title: string;
+    aiSummary: string | null;
+    difficulty: "beginner" | "intermediate" | "advanced" | null;
+    estimatedHours: number | null;
+    issueType: "bug" | "feature" | "docs" | "refactor" | null;
     githubUrl: string;
+    requiredSkills: string[];
+    bookmarks: Array<{ id: string }>;
     repo: {
       id: string;
       owner: string;
       name: string;
+      fullName: string;
+      categories: string[];
+      maintainerScore: number;
+      activityScore: number;
+      language: string | null;
     };
   };
+};
+
+type UserLanguageSkill = {
+  name: string;
 };
 
 type GitHubIssueResponse = {
@@ -77,7 +98,10 @@ async function getDbUser() {
 }
 
 function getUserLanguageOptions(dbUser: Awaited<ReturnType<typeof getDbUser>>) {
-  const languages = dbUser?.skillProfile?.skills.map((skill) => skill.name) ?? [];
+  const languages =
+    (dbUser?.skillProfile?.skills as UserLanguageSkill[] | undefined)?.map(
+      (skill: UserLanguageSkill) => skill.name
+    ) ?? [];
   const byIdentity = new Map<string, string>();
 
   for (const language of languages) {

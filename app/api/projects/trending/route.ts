@@ -1,9 +1,42 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { getCurrentDbUserId } from "@/lib/auth-user";
+import { pageQuerySchema } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 import { skillIdentity } from "@/lib/skills";
 
 export const dynamic = "force-dynamic";
+
+const DEFAULT_PAGE_SIZE = 12;
+const MAX_PAGE_SIZE = 24;
+const MAX_RANKING_CANDIDATES = 200;
+
+const querySchema = z.object({
+  ...pageQuerySchema(DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE),
+});
+
+type SkillRow = {
+  name: string;
+  level: "strong" | "moderate" | "learning";
+  confidence: number;
+};
+
+type TrendingRepo = {
+  id: string;
+  owner: string;
+  name: string;
+  fullName: string;
+  description: string | null;
+  language: string | null;
+  stars: number;
+  categories: string[];
+  activityScore: number;
+};
+
+type RankedTrendingRepo = TrendingRepo & {
+  personalizationScore: number;
+  rankingScore: number;
+};
 
 // Maps normalized skill identities to broad project categories.
 const SKILL_TO_CATEGORIES: Record<string, string[]> = {
@@ -77,7 +110,18 @@ const SKILL_TO_CATEGORIES: Record<string, string[]> = {
   esbuild: ["tools"],
 };
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const parsed = querySchema.safeParse({
+    page: searchParams.get("page") || undefined,
+    pageSize: searchParams.get("pageSize") || undefined,
+  });
+
+  if (!parsed.success) {
+    return NextResponse.json({ error: z.treeifyError(parsed.error) }, { status: 400 });
+  }
+
+  const { page, pageSize } = parsed.data;
   const userId = await getCurrentDbUserId();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -92,10 +136,11 @@ export async function GET() {
     },
   });
 
-  const normalizedSkills = new Set(
-    (skillProfile?.skills ?? [])
-      .map((skill) => skillIdentity(skill.name))
-      .filter(Boolean)
+  const skills = (skillProfile?.skills ?? []) as SkillRow[];
+  const normalizedSkills = new Set<string>(
+    skills
+      .map((skill: SkillRow) => skillIdentity(skill.name))
+      .filter((skill): skill is string => Boolean(skill))
   );
 
   if (normalizedSkills.size === 0) {
@@ -110,13 +155,13 @@ export async function GET() {
   }
 
   const skillWeights = new Map(
-    (skillProfile?.skills ?? []).map((skill) => {
+    skills.map((skill: SkillRow) => {
       const levelBoost = skill.level === "strong" ? 1 : skill.level === "moderate" ? 0.75 : 0.45;
       return [skillIdentity(skill.name), Math.max(skill.confidence, levelBoost)];
     })
-  );
+  ) as Map<string, number>;
 
-  const repos = await prisma.repo.findMany({
+  const repos: TrendingRepo[] = await prisma.repo.findMany({
     select: {
       id: true,
       owner: true,
@@ -129,14 +174,15 @@ export async function GET() {
       activityScore: true,
     },
     orderBy: [{ activityScore: "desc" }, { stars: "desc" }],
+    take: MAX_RANKING_CANDIDATES,
   });
 
   const rankedRepos = repos
-    .map((repo) => {
+    .map((repo: TrendingRepo): RankedTrendingRepo => {
       const languageIdentity = repo.language ? skillIdentity(repo.language) : "";
       const languageWeight = languageIdentity ? skillWeights.get(languageIdentity) ?? 0 : 0;
 
-      const categoryWeight = repo.categories.reduce((best, category) => {
+      const categoryWeight = repo.categories.reduce((best: number, category: string) => {
         if (!matchingCategories.has(category.toLowerCase())) return best;
 
         const matchingSkillWeight = [...skillWeights.entries()].reduce((skillBest, [skill, weight]) => {
@@ -158,25 +204,27 @@ export async function GET() {
           Math.log10(Math.max(repo.stars, 1)),
       };
     })
-    .sort((a, b) =>
+    .sort((a: RankedTrendingRepo, b: RankedTrendingRepo) =>
       b.rankingScore === a.rankingScore
         ? b.stars - a.stars
         : b.rankingScore - a.rankingScore
     );
 
-  const matchingRepos = rankedRepos.filter((repo) => repo.personalizationScore > 0);
+  const matchingRepos = rankedRepos.filter((repo: RankedTrendingRepo) => repo.personalizationScore > 0);
   const selectedRepos = [...matchingRepos];
   const selectedIds = new Set(selectedRepos.map((repo) => repo.id));
 
   for (const repo of rankedRepos) {
-    if (selectedRepos.length >= 12) break;
+    if (selectedRepos.length >= page * pageSize + 1) break;
     if (selectedIds.has(repo.id)) continue;
 
     selectedRepos.push(repo);
     selectedIds.add(repo.id);
   }
 
-  const projects = selectedRepos.slice(0, 12).map((repo) => ({
+  const start = (page - 1) * pageSize;
+  const visibleRepos = selectedRepos.slice(start, start + pageSize);
+  const projects = visibleRepos.map((repo) => ({
     id: repo.id,
     owner: repo.owner,
     name: repo.name,
@@ -188,5 +236,14 @@ export async function GET() {
     activityScore: repo.activityScore,
   }));
 
-  return NextResponse.json({ projects });
+  return NextResponse.json({
+    projects,
+    pagination: {
+      page,
+      pageSize,
+      hasNextPage: selectedRepos.length > start + pageSize,
+      hasPreviousPage: page > 1,
+      candidateLimit: MAX_RANKING_CANDIDATES,
+    },
+  });
 }

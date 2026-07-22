@@ -12,6 +12,20 @@ export const dynamic = "force-dynamic";
 type TagRow = { tag: string; count: number };
 type IssueIdRow = { id: string };
 type RepoIdRow = { id: string; matchingIssueCount: number };
+type TechRepoRow = {
+  id: string;
+  owner: string;
+  name: string;
+  fullName: string;
+  description: string | null;
+  categories: string[];
+  stars: number;
+  language: string | null;
+  maintainerScore: number;
+  activityScore: number;
+  lastFetchedAt: Date | null;
+  _count: { issues: number };
+};
 
 async function getTagCloud() {
   return prisma.$queryRaw<TagRow[]>`
@@ -31,7 +45,7 @@ export async function GET(
   const decodedTag = decodeURIComponent(tag);
   const userId = await getOptionalDbUserId();
 
-  const [tagCloud, issueRows, repoRows] = await Promise.all([
+  const [tagCloud, issueRows, repoRows]: [TagRow[], IssueIdRow[], RepoIdRow[]] = await Promise.all([
     getTagCloud(),
     userId
       ? prisma.$queryRaw<IssueIdRow[]>`
@@ -75,8 +89,8 @@ export async function GET(
     `,
   ]);
 
-  const issueIds = issueRows.map((row) => row.id);
-  const repoIds = repoRows.map((row) => row.id);
+  const issueIds = issueRows.map((row: IssueIdRow) => row.id);
+  const repoIds = repoRows.map((row: RepoIdRow) => row.id);
   const issues =
     issueIds.length > 0
       ? await prisma.issue.findMany({
@@ -109,9 +123,9 @@ export async function GET(
         })
       : [];
   const issueById = new Map((issues as IssueFeedRecord[]).map((issue) => [issue.id, issue]));
-  const repoById = new Map(repos.map((repo) => [repo.id, repo]));
+  const repoById = new Map((repos as TechRepoRow[]).map((repo: TechRepoRow) => [repo.id, repo]));
   const matchingIssueCountByRepo = new Map(
-    repoRows.map((row) => [row.id, row.matchingIssueCount])
+    repoRows.map((row: RepoIdRow) => [row.id, row.matchingIssueCount])
   );
 
   return NextResponse.json({
@@ -120,7 +134,7 @@ export async function GET(
     repos: repoIds
       .map((id) => repoById.get(id))
       .filter((repo): repo is NonNullable<typeof repo> => Boolean(repo))
-      .map((repo) => ({
+      .map((repo: TechRepoRow) => ({
         ...repo,
         healthScore: repo.maintainerScore * 0.55 + repo.activityScore * 0.45,
         openIssueCount: repo._count.issues,
