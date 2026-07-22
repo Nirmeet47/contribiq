@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Bookmark,
   ChevronDown,
@@ -15,15 +15,14 @@ import {
   ThumbsDown,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { IssueLoadingSkeleton } from "@/components/issues/IssueLoadingSkeleton";
 import type { IssueDetailResponse } from "@/components/issues/types";
 import { formatDate, percentage, scoreTone, titleCase } from "@/components/issues/issue-utils";
 import { GitHubMark } from "@/components/project/project-utils";
 
-async function fetchIssue(issueId: string) {
-  const response = await fetch(`/api/issues/${issueId}`);
+async function fetchIssue(issueId: string, similarPage: number) {
+  const response = await fetch(`/api/issues/${issueId}?similarPage=${similarPage}&similarPageSize=5`);
   if (!response.ok) throw new Error("Failed to load issue");
   return (await response.json()) as IssueDetailResponse;
 }
@@ -91,30 +90,18 @@ function TagPill({ children, variant = "default" }: { children: React.ReactNode;
 
 export function IssueDetailPage({ issueId }: { issueId: string }) {
   const queryClient = useQueryClient();
-  const [visibleSimilarCount, setVisibleSimilarCount] = useState(5);
 
-  const issueQuery = useQuery({
+  const issueQuery = useInfiniteQuery({
     queryKey: ["issue", issueId],
-    queryFn: () => fetchIssue(issueId),
+    queryFn: ({ pageParam }) => fetchIssue(issueId, pageParam),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) =>
+      lastPage.similarPagination.hasNextPage ? lastPage.similarPagination.page + 1 : undefined,
   });
 
   const workingMutation = useMutation({
     mutationFn: () => toggleWorking(issueId),
-    onSuccess: (data) => {
-      queryClient.setQueryData<IssueDetailResponse>(["issue", issueId], (current) => {
-        if (!current) return current;
-
-        const nextWorkersCount =
-          data.working === current.isWorking
-            ? current.workersCount
-            : Math.max(0, current.workersCount + (data.working ? 1 : -1));
-
-        return {
-          ...current,
-          isWorking: data.working,
-          workersCount: nextWorkersCount,
-        };
-      });
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["issue", issueId] });
     },
   });
@@ -141,10 +128,11 @@ export function IssueDetailPage({ issueId }: { issueId: string }) {
     );
   }
 
-  const { issue, match, similarIssues, comments, isWorking } = issueQuery.data;
+  const issuePages = issueQuery.data.pages;
+  const firstIssuePage = issuePages[0];
+  const { issue, match, comments, isWorking } = firstIssuePage;
+  const similarIssues = issuePages.flatMap((page) => page.similarIssues);
   const displayedComments = comments.slice(0, 3);
-  const displayedSimilarIssues = similarIssues.slice(0, visibleSimilarCount);
-  const hasMoreSimilarIssues = visibleSimilarCount < similarIssues.length;
   const visibleCommentCount = Math.max(issue.commentCount, comments.length);
   const matchScore = match ? Math.round(match.score * 100) : null;
   const issueTypeLabel = issue.issueType ? titleCase(issue.issueType) : "Issue";
@@ -320,7 +308,7 @@ export function IssueDetailPage({ issueId }: { issueId: string }) {
           </div>
           {similarIssues.length > 0 ? (
             <div className="custom-scrollbar max-h-[760px] space-y-4 overflow-y-auto pr-2">
-                {displayedSimilarIssues.map((similarIssue) => {
+                {similarIssues.map((similarIssue) => {
                 const similarLogoUrl = `https://github.com/${similarIssue.repo.owner}.png`;
                 const similarReasons = [
                   similarIssue.requiredSkills.length > 0
@@ -456,15 +444,20 @@ export function IssueDetailPage({ issueId }: { issueId: string }) {
                   </article>
                 );
                 })}
-              {hasMoreSimilarIssues && (
+              {issueQuery.hasNextPage && (
                 <div className="pt-5">
                   <button
                     type="button"
-                    onClick={() => setVisibleSimilarCount((current) => current + 5)}
-                    className="mx-auto flex h-10 w-fit items-center justify-center gap-2 rounded-sm border border-emerald-500/35 bg-emerald-500/5 px-5 text-sm font-bold text-emerald-400 transition-colors hover:border-emerald-400/70 hover:bg-emerald-500/10 hover:text-emerald-300"
+                    onClick={() => issueQuery.fetchNextPage()}
+                    disabled={issueQuery.isFetchingNextPage}
+                    className="mx-auto flex h-10 w-fit cursor-pointer items-center justify-center gap-2 rounded-sm border border-emerald-500/35 bg-emerald-500/5 px-5 text-sm font-bold text-emerald-400 transition-colors hover:border-emerald-400/70 hover:bg-emerald-500/10 hover:text-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <ChevronDown className="h-4 w-4" />
-                    Load more
+                    {issueQuery.isFetchingNextPage ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                    {issueQuery.isFetchingNextPage ? "Loading..." : "Load more"}
                   </button>
                 </div>
               )}

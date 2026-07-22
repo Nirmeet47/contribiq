@@ -1,6 +1,6 @@
 "use client";
 
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bookmark,
   BookmarkCheck,
@@ -8,6 +8,7 @@ import {
   ChevronDown,
   Clock,
   GitPullRequest,
+  Loader2,
   ThumbsDown,
 } from "lucide-react";
 import Link from "next/link";
@@ -60,6 +61,11 @@ type FeedResponse = {
     lastMatchedAt: string | null;
   };
   matches: FeedMatch[];
+  pagination?: {
+    page: number;
+    pageSize: number;
+    hasNextPage: boolean;
+  };
   reason?: "profile_incomplete";
 };
 
@@ -257,13 +263,15 @@ async function fetchFeed({
   issueType,
   languages,
   sort,
+  page,
 }: {
   difficulty?: Difficulty;
   issueType?: IssueType;
   languages: string[];
   sort: SortOrder;
+  page: number;
 }) {
-  const params = new URLSearchParams({ sort });
+  const params = new URLSearchParams({ sort, page: page.toString(), pageSize: "5" });
   if (difficulty) params.set("difficulty", difficulty);
   if (issueType) params.set("issueType", issueType);
   for (const language of languages) params.append("language", language);
@@ -587,7 +595,6 @@ export function RecommendedIssues() {
   const [languages, setLanguages] = useState<string[]>([]);
   const [sort, setSort] = useState<SortOrder>("desc");
   const [dismissedIssueIds, setDismissedIssueIds] = useState<Set<string>>(() => new Set());
-  const [visibleMatchCount, setVisibleMatchCount] = useState(5);
   const debouncedLanguages = useDebouncedValue(languages, 300);
 
   const skillsQuery = useQuery({
@@ -595,20 +602,24 @@ export function RecommendedIssues() {
     queryFn: fetchSkills,
   });
 
-  const feedQuery = useQuery({
+  const feedQuery = useInfiniteQuery({
     queryKey: ["feed", { difficulty, issueType, languages: debouncedLanguages, sort }],
-    queryFn: () => fetchFeed({ difficulty, issueType, languages: debouncedLanguages, sort }),
-    placeholderData: keepPreviousData,
+    queryFn: ({ pageParam }) =>
+      fetchFeed({ difficulty, issueType, languages: debouncedLanguages, sort, page: pageParam }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) =>
+      lastPage.pagination?.hasNextPage ? (lastPage.pagination.page + 1) : undefined,
   });
-  const languageOptions = feedQuery.data?.filters?.languages ?? [];
+  const feedPages = feedQuery.data?.pages ?? [];
+  const firstFeedPage = feedPages[0];
+  const allMatches = feedPages.flatMap((page) => page.matches);
+  const languageOptions = firstFeedPage?.filters?.languages ?? [];
   const visibleMatches =
-    feedQuery.data?.matches.filter((match) => !dismissedIssueIds.has(match.issue.id)) ?? [];
-  const displayedMatches = visibleMatches.slice(0, visibleMatchCount);
-  const hasMoreVisibleMatches = visibleMatchCount < visibleMatches.length;
+    allMatches.filter((match) => !dismissedIssueIds.has(match.issue.id)) ?? [];
   const hasActiveFilters = Boolean(difficulty || issueType || languages.length > 0);
   const matchStatusLabel = feedQuery.isLoading
     ? "Checking match status"
-    : formatLastMatched(feedQuery.data?.status?.lastMatchedAt);
+    : formatLastMatched(firstFeedPage?.status?.lastMatchedAt);
 
   return (
     <section className="space-y-3 pb-8">
@@ -631,10 +642,7 @@ export function RecommendedIssues() {
             <DashboardFilterSelect
               label="Difficulty"
               value={difficulty ?? ""}
-              onChange={(value) => {
-                setDifficulty(value || undefined);
-                setVisibleMatchCount(5);
-              }}
+              onChange={(value) => setDifficulty(value || undefined)}
               options={[
                 { value: "", label: "All difficulty" },
                 ...DIFFICULTIES.map((value) => ({ value, label: titleCase(value) })),
@@ -644,10 +652,7 @@ export function RecommendedIssues() {
             <DashboardFilterSelect
               label="Type"
               value={issueType ?? ""}
-              onChange={(value) => {
-                setIssueType(value || undefined);
-                setVisibleMatchCount(5);
-              }}
+              onChange={(value) => setIssueType(value || undefined)}
               options={[
                 { value: "", label: "All types" },
                 ...ISSUE_TYPES.map((value) => ({ value, label: titleCase(value) })),
@@ -658,10 +663,7 @@ export function RecommendedIssues() {
               label="Languages"
               options={languageOptions}
               value={languages}
-              onChange={(value) => {
-                setLanguages(value);
-                setVisibleMatchCount(5);
-              }}
+              onChange={setLanguages}
               placeholder="All languages"
               searchPlaceholder="Search language"
             />
@@ -670,10 +672,7 @@ export function RecommendedIssues() {
           <DashboardFilterSelect
             label="Sort"
             value={sort}
-            onChange={(value) => {
-              setSort((value || "desc") as SortOrder);
-              setVisibleMatchCount(5);
-            }}
+            onChange={(value) => setSort((value || "desc") as SortOrder)}
             options={[
               { value: "desc", label: "Best match" },
               { value: "asc", label: "Lowest match" },
@@ -697,11 +696,11 @@ export function RecommendedIssues() {
         />
       )}
 
-      {feedQuery.data?.matches.length === 0 && (
+      {firstFeedPage?.matches.length === 0 && (
         <FeedRecoveryState
-          title={feedQuery.data.reason === "profile_incomplete" ? "Finish your matching profile" : "No strong matches yet"}
+          title={firstFeedPage.reason === "profile_incomplete" ? "Finish your matching profile" : "No strong matches yet"}
           detail={
-            feedQuery.data.reason === "profile_incomplete"
+            firstFeedPage.reason === "profile_incomplete"
               ? "Complete your skills, interests, and time commitment so ContribIQ can rank issues for you."
               : hasActiveFilters
                 ? "Your current filters may be too narrow. Broaden them or refresh after updating your skills."
@@ -710,7 +709,7 @@ export function RecommendedIssues() {
         />
       )}
 
-      {feedQuery.data && feedQuery.data.matches.length > 0 && visibleMatches.length === 0 && (
+      {firstFeedPage && allMatches.length > 0 && visibleMatches.length === 0 && (
         <FeedRecoveryState
           title="No visible recommendations left"
           detail="You have dismissed or started every issue in this view. Refresh the feed or broaden the filters to bring more options back."
@@ -722,7 +721,7 @@ export function RecommendedIssues() {
           className="custom-scrollbar h-[calc(100vh-315px)] min-h-[520px] space-y-4 overflow-y-auto pr-2"
           aria-label="Recommended issues"
         >
-          {displayedMatches.map((match) => (
+          {visibleMatches.map((match) => (
             <RecommendedIssueCard
               key={match.id}
               match={match}
@@ -739,15 +738,20 @@ export function RecommendedIssues() {
               }
             />
           ))}
-          {hasMoreVisibleMatches && (
+          {feedQuery.hasNextPage && (
             <div className="pt-5">
               <button
                 type="button"
-                onClick={() => setVisibleMatchCount((current) => current + 5)}
-                className="mx-auto flex h-10 w-fit items-center justify-center gap-2 rounded-sm border border-emerald-500/35 bg-emerald-500/5 px-5 text-sm font-bold text-emerald-400 transition-colors hover:border-emerald-400/70 hover:bg-emerald-500/10 hover:text-emerald-300"
+                onClick={() => feedQuery.fetchNextPage()}
+                disabled={feedQuery.isFetchingNextPage}
+                className="mx-auto flex h-10 w-fit cursor-pointer items-center justify-center gap-2 rounded-sm border border-emerald-500/35 bg-emerald-500/5 px-5 text-sm font-bold text-emerald-400 transition-colors hover:border-emerald-400/70 hover:bg-emerald-500/10 hover:text-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <ChevronDown className="h-4 w-4" />
-                Load more
+                {feedQuery.isFetchingNextPage ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+                {feedQuery.isFetchingNextPage ? "Loading..." : "Load more"}
               </button>
             </div>
           )}

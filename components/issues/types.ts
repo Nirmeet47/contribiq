@@ -50,6 +50,11 @@ export type IssueDetailResponse = {
       maintainerScore: number;
     };
   }>;
+  similarPagination: {
+    page: number;
+    pageSize: number;
+    hasNextPage: boolean;
+  };
   comments: Array<{
     id: number;
     body: string | null;
