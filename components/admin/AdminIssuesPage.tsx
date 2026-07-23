@@ -1,8 +1,9 @@
 "use client";
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Sparkles, Search } from "lucide-react";
-import { useDeferredValue, useState } from "react";
+import type { MouseEvent, RefObject } from "react";
+import { ChevronDown, Check, Loader2, Sparkles, Search } from "lucide-react";
+import { useDeferredValue, useEffect, useId, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PaginationControls } from "@/components/ui/pagination-controls";
@@ -27,22 +28,49 @@ type IssueRow = {
   repo: { fullName: string };
 };
 
-type IssueFilter = "ALL" | "UNCLASSIFIED";
+type ClassificationFilter = "ALL" | "CLASSIFIED" | "UNCLASSIFIED";
+type DifficultyFilter = "ALL" | "beginner" | "intermediate" | "advanced";
+type IssueTypeFilter = "ALL" | "bug" | "feature" | "docs" | "refactor";
 
 type IssuesResponse = {
-  counts: Record<IssueFilter, number>;
+  counts: Record<"ALL" | "UNCLASSIFIED", number>;
   issues: IssueRow[];
   pagination: { page: number; pageSize: number; total: number; hasNextPage: boolean };
 };
 
-const FILTERS: Array<{ value: IssueFilter; label: string; dot?: string }> = [
-  { value: "ALL", label: "All" },
-  { value: "UNCLASSIFIED", label: "Unclassified", dot: "bg-yellow-300" },
+const CLASSIFICATION_OPTIONS: Array<{ value: ClassificationFilter; label: string }> = [
+  { value: "ALL", label: "Issues: All" },
+  { value: "CLASSIFIED", label: "Issues: Classified" },
+  { value: "UNCLASSIFIED", label: "Issues: Unclassified" },
 ];
 
-async function fetchIssues(page: number, filter: IssueFilter, search: string) {
+const DIFFICULTY_OPTIONS: Array<{ value: DifficultyFilter; label: string }> = [
+  { value: "ALL", label: "Difficulty: All" },
+  { value: "beginner", label: "Beginner" },
+  { value: "intermediate", label: "Intermediate" },
+  { value: "advanced", label: "Advanced" },
+];
+
+const ISSUE_TYPE_OPTIONS: Array<{ value: IssueTypeFilter; label: string }> = [
+  { value: "ALL", label: "Type: All" },
+  { value: "bug", label: "Bug" },
+  { value: "feature", label: "Feature" },
+  { value: "docs", label: "Docs" },
+  { value: "refactor", label: "Refactor" },
+];
+
+async function fetchIssues(
+  page: number,
+  classification: ClassificationFilter,
+  difficulty: DifficultyFilter,
+  issueType: IssueTypeFilter,
+  search: string
+) {
   const params = new URLSearchParams({ page: String(page), pageSize: "10" });
-  if (filter === "UNCLASSIFIED") params.set("classified", "false");
+  if (classification === "CLASSIFIED") params.set("classified", "true");
+  if (classification === "UNCLASSIFIED") params.set("classified", "false");
+  if (difficulty !== "ALL") params.set("difficulty", difficulty);
+  if (issueType !== "ALL") params.set("issueType", issueType);
   if (search.trim()) params.set("q", search.trim());
   const response = await fetch(`/api/admin/issues?${params}`);
   if (!response.ok) throw new Error("Failed to load issues");
@@ -56,16 +84,121 @@ async function classifyIssue(issueId: string) {
   return payload;
 }
 
+function useDismissibleDetails(id: string, detailsRef: RefObject<HTMLDetailsElement | null>) {
+  useEffect(() => {
+    function closeOtherDropdowns(event: Event) {
+      const current = event as CustomEvent<string>;
+      if (current.detail !== id) detailsRef.current?.removeAttribute("open");
+    }
+
+    function closeOnOutsidePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (detailsRef.current?.contains(target)) return;
+
+      detailsRef.current?.removeAttribute("open");
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+
+      detailsRef.current?.removeAttribute("open");
+      detailsRef.current?.querySelector("summary")?.blur();
+    }
+
+    window.addEventListener("admin-issue-filter-open", closeOtherDropdowns);
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown, true);
+    document.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      window.removeEventListener("admin-issue-filter-open", closeOtherDropdowns);
+      document.removeEventListener("pointerdown", closeOnOutsidePointerDown, true);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [detailsRef, id]);
+}
+
+function FilterSelect<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: Array<{ value: T; label: string }>;
+  onChange: (value: T) => void;
+}) {
+  const id = useId();
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const selectedOption = options.find((option) => option.value === value) ?? options[0];
+  useDismissibleDetails(id, detailsRef);
+
+  function selectOption(nextValue: T, event: MouseEvent<HTMLButtonElement>) {
+    onChange(nextValue);
+    detailsRef.current?.removeAttribute("open");
+    event.currentTarget.blur();
+  }
+
+  return (
+    <details
+      ref={detailsRef}
+      className="group relative w-full"
+      onToggle={(event) => {
+        if (event.currentTarget.open) {
+          window.dispatchEvent(new CustomEvent("admin-issue-filter-open", { detail: id }));
+        }
+      }}
+    >
+      <summary
+        className="flex h-11 w-full cursor-pointer list-none items-center justify-between gap-3 rounded-sm border border-zinc-800 bg-zinc-900/70 px-3 text-sm font-medium text-white outline-none transition-colors hover:border-zinc-700 focus:border-emerald-500 [&::-webkit-details-marker]:hidden"
+      >
+        <span className="truncate">{selectedOption.label}</span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-zinc-500 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="absolute left-0 z-30 mt-2 w-full min-w-56 rounded-sm border border-zinc-800 bg-zinc-950 p-2 shadow-xl shadow-black/40">
+        {options.map((option) => {
+          const selected = option.value === value;
+
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={(event) => selectOption(option.value, event)}
+              className={`flex h-9 w-full items-center gap-2 rounded-sm px-2.5 text-left text-sm font-medium transition-colors ${
+                selected
+                  ? "bg-emerald-500/10 text-white"
+                  : "text-zinc-300 hover:bg-zinc-900 hover:text-white"
+              }`}
+            >
+              <span
+                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-colors ${
+                  selected
+                    ? "border-emerald-400 bg-emerald-500 text-zinc-950"
+                    : "border-zinc-700 bg-zinc-950 text-transparent"
+                }`}
+              >
+                <Check className="h-3 w-3" />
+              </span>
+              <span className="truncate">{option.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </details>
+  );
+}
+
 export function AdminIssuesPage() {
   const queryClient = useQueryClient();
-  const [filter, setFilter] = useState<IssueFilter>("ALL");
+  const [classification, setClassification] = useState<ClassificationFilter>("ALL");
+  const [difficulty, setDifficulty] = useState<DifficultyFilter>("ALL");
+  const [issueType, setIssueType] = useState<IssueTypeFilter>("ALL");
   const [search, setSearch] = useState("");
   const [classificationError, setClassificationError] = useState<string | null>(null);
   const deferredSearch = useDeferredValue(search);
   const [page, setPage] = useState(1);
   const issuesQuery = useQuery({
-    queryKey: ["admin", "issues", page, filter, deferredSearch],
-    queryFn: () => fetchIssues(page, filter, deferredSearch),
+    queryKey: ["admin", "issues", page, classification, difficulty, issueType, deferredSearch],
+    queryFn: () => fetchIssues(page, classification, difficulty, issueType, deferredSearch),
     placeholderData: keepPreviousData,
   });
   const classifyMutation = useMutation({
@@ -80,13 +213,12 @@ export function AdminIssuesPage() {
     },
   });
 
-  function selectFilter(next: IssueFilter) {
-    setFilter(next);
+  function updateFilter<T>(setter: (value: T) => void, value: T) {
+    setter(value);
     setPage(1);
   }
 
   const rows = issuesQuery.data?.issues ?? [];
-  const counts = issuesQuery.data?.counts;
   const totalPages = issuesQuery.data
     ? Math.max(1, Math.ceil(issuesQuery.data.pagination.total / issuesQuery.data.pagination.pageSize))
     : 1;
@@ -95,37 +227,34 @@ export function AdminIssuesPage() {
     <div className="mx-auto max-w-7xl space-y-5 px-6 py-8 sm:px-8 lg:px-10">
       <PageHeader title="Issues" subtitle="Recently updated issue classifications and stuck unclassified work." />
 
-      <div className="relative w-full lg:max-w-xs">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
-        <input
-          value={search}
-          onChange={(event) => {
-            setSearch(event.target.value);
-            setPage(1);
-          }}
-          placeholder="Search issues"
-          className="h-11 w-full rounded-sm border border-zinc-800 bg-zinc-900/70 pl-10 pr-3 text-sm font-medium text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-emerald-500"
+      <div className="grid gap-3 lg:grid-cols-[1.35fr_1fr_1fr_1fr]">
+        <div className="relative w-full">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+          <input
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
+            placeholder="Search issues"
+            className="h-11 w-full rounded-sm border border-zinc-800 bg-zinc-900/70 pl-10 pr-3 text-sm font-medium text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-emerald-500"
+          />
+        </div>
+        <FilterSelect
+          value={classification}
+          options={CLASSIFICATION_OPTIONS}
+          onChange={(value) => updateFilter(setClassification, value)}
         />
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        {FILTERS.map((item) => (
-          <button
-            key={item.value}
-            type="button"
-            onClick={() => selectFilter(item.value)}
-            className={`h-9 rounded-sm border px-3 text-sm font-medium transition-colors ${
-              filter === item.value
-                ? "border-emerald-500 bg-emerald-500 text-zinc-950"
-                : "border-zinc-800 bg-zinc-950 text-zinc-300 hover:border-zinc-700 hover:text-white"
-            }`}
-          >
-            <span className="inline-flex items-center gap-2">
-              {item.dot ? <span className={`h-2 w-2 rounded-full ${item.dot}`} /> : null}
-              {item.label} - {formatNumber(counts?.[item.value] ?? 0)}
-            </span>
-          </button>
-        ))}
+        <FilterSelect
+          value={difficulty}
+          options={DIFFICULTY_OPTIONS}
+          onChange={(value) => updateFilter(setDifficulty, value)}
+        />
+        <FilterSelect
+          value={issueType}
+          options={ISSUE_TYPE_OPTIONS}
+          onChange={(value) => updateFilter(setIssueType, value)}
+        />
       </div>
 
       {issuesQuery.isLoading ? <LoadingState label="Loading issues..." /> : null}

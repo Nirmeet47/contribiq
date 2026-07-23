@@ -210,11 +210,13 @@ export function AdminReposPage() {
                         {percent(repo.maintainerScore)}
                       </td>
                       <td className="px-4 py-4">
-                        <div className="space-y-1.5">
+                        <div className={detail ? "space-y-1.5" : "flex h-10 items-center"}>
                           <StatusBadge status={repo.indexingStatus} />
-                          <div className="h-4 truncate text-xs font-medium text-zinc-500">
-                            {detail ?? ""}
-                          </div>
+                          {detail ? (
+                            <div className="h-4 truncate text-xs font-medium text-zinc-500">
+                              {detail}
+                            </div>
+                          ) : null}
                         </div>
                       </td>
                       <td className="px-4 py-4 font-medium">{formatNumber(repo.openIssues)}</td>
