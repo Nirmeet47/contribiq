@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 const reposQuerySchema = adminPaginationSchema.extend({
   status: z.enum(["NOT_INDEXED", "PENDING", "INDEXED", "FAILED"]).optional(),
+  q: z.string().trim().max(120).optional(),
 });
 
 export async function GET(request: Request) {
@@ -19,21 +20,35 @@ export async function GET(request: Request) {
     page: searchParams.get("page") || undefined,
     pageSize: searchParams.get("pageSize") || undefined,
     status: searchParams.get("status") || undefined,
+    q: searchParams.get("q") || undefined,
   });
 
   if (!parsed.success) {
     return NextResponse.json({ error: z.treeifyError(parsed.error) }, { status: 400 });
   }
 
-  const { page, pageSize, status } = parsed.data;
-  const where = status ? { indexingStatus: status } : {};
+  const { page, pageSize, status, q } = parsed.data;
+  const searchWhere = q
+    ? {
+        OR: [
+          { fullName: { contains: q, mode: "insensitive" as const } },
+          { owner: { contains: q, mode: "insensitive" as const } },
+          { name: { contains: q, mode: "insensitive" as const } },
+          { language: { contains: q, mode: "insensitive" as const } },
+        ],
+      }
+    : {};
+  const where = {
+    ...searchWhere,
+    ...(status ? { indexingStatus: status } : {}),
+  };
   const [count, allCount, failedCount, pendingCount, indexedCount, notIndexedCount, repos] = await Promise.all([
     prisma.repo.count({ where }),
-    prisma.repo.count(),
-    prisma.repo.count({ where: { indexingStatus: "FAILED" } }),
-    prisma.repo.count({ where: { indexingStatus: "PENDING" } }),
-    prisma.repo.count({ where: { indexingStatus: "INDEXED" } }),
-    prisma.repo.count({ where: { indexingStatus: "NOT_INDEXED" } }),
+    prisma.repo.count({ where: searchWhere }),
+    prisma.repo.count({ where: { ...searchWhere, indexingStatus: "FAILED" } }),
+    prisma.repo.count({ where: { ...searchWhere, indexingStatus: "PENDING" } }),
+    prisma.repo.count({ where: { ...searchWhere, indexingStatus: "INDEXED" } }),
+    prisma.repo.count({ where: { ...searchWhere, indexingStatus: "NOT_INDEXED" } }),
     prisma.repo.findMany({
       where,
       orderBy: [{ indexingStatus: "asc" }, { updatedAt: "desc" }],

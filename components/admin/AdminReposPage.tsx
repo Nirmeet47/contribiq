@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Circle, Clock3, RefreshCw, Search, XCircle } from "lucide-react";
-import { useState } from "react";
+import { useDeferredValue, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import {
@@ -51,9 +51,10 @@ function indexingDetail(repo: RepoRow) {
   return null;
 }
 
-async function fetchRepos(page: number, status: string) {
+async function fetchRepos(page: number, status: string, search: string) {
   const params = new URLSearchParams({ page: String(page), pageSize: "10" });
   if (status !== "ALL") params.set("status", status);
+  if (search.trim()) params.set("q", search.trim());
   const response = await fetch(`/api/admin/repos?${params}`);
   if (!response.ok) throw new Error("Failed to load repos");
   return (await response.json()) as ReposResponse;
@@ -75,10 +76,11 @@ export function AdminReposPage() {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<(typeof STATUS_FILTERS)[number]>("ALL");
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [page, setPage] = useState(1);
   const reposQuery = useQuery({
-    queryKey: ["admin", "repos", page, status],
-    queryFn: () => fetchRepos(page, status),
+    queryKey: ["admin", "repos", page, status, deferredSearch],
+    queryFn: () => fetchRepos(page, status, deferredSearch),
     placeholderData: keepPreviousData,
   });
   const reindexMutation = useMutation({
@@ -102,9 +104,7 @@ export function AdminReposPage() {
   }
 
   const counts = reposQuery.data?.counts;
-  const filteredRepos = reposQuery.data?.repos.filter((repo) =>
-    repo.fullName.toLowerCase().includes(search.trim().toLowerCase())
-  );
+  const visibleRows = reposQuery.data?.repos ?? [];
   const totalPages = reposQuery.data
     ? Math.max(1, Math.ceil(reposQuery.data.pagination.total / reposQuery.data.pagination.pageSize))
     : 1;
@@ -118,7 +118,10 @@ export function AdminReposPage() {
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
           <input
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
             placeholder="Search repos"
             className="h-11 w-full rounded-sm border border-zinc-800 bg-zinc-900/70 pl-10 pr-3 text-sm font-medium text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-emerald-500"
           />
@@ -161,7 +164,16 @@ export function AdminReposPage() {
       {reposQuery.data ? (
         <section className="overflow-hidden rounded-sm border border-zinc-800 bg-zinc-950 shadow-sm shadow-black/20">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-zinc-800 text-sm">
+            <table className="min-w-[980px] table-fixed divide-y divide-zinc-800 text-sm">
+              <colgroup>
+                <col className="w-[29%]" />
+                <col className="w-[12%]" />
+                <col className="w-[14%]" />
+                <col className="w-[12%]" />
+                <col className="w-[16%]" />
+                <col className="w-[9%]" />
+                <col className="w-[8%]" />
+              </colgroup>
               <thead className="bg-zinc-900/80 text-left text-xs font-medium uppercase text-zinc-500">
                 <tr>
                   <th className="px-4 py-3">Name</th>
@@ -174,44 +186,50 @@ export function AdminReposPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800">
-                {(filteredRepos ?? []).map((repo) => {
+                {visibleRows.map((repo) => {
                   const detail = indexingDetail(repo);
 
                   return (
                     <tr key={repo.id} className="h-[66px] align-middle text-zinc-200 odd:bg-zinc-950 even:bg-zinc-900/70">
                       <td className="px-4 py-4 font-medium text-white">
-                        <div>{repo.fullName}</div>
+                        <div className="truncate" title={repo.fullName}>{repo.fullName}</div>
                         {repo.indexingStatus === "FAILED" && repo.indexingError ? (
                           <div className="mt-2 flex max-w-md items-start gap-1.5 text-xs font-medium leading-5 text-red-400" title={repo.indexingError}>
                             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                            <span>{repo.indexingError}</span>
+                            <span className="line-clamp-2">{repo.indexingError}</span>
                           </div>
                         ) : null}
                       </td>
                       <td className="px-4 py-4 font-medium">{formatNumber(repo.stars)}</td>
-                      <td className="px-4 py-4 font-medium">{repo.language ?? "Unknown"}</td>
+                      <td className="px-4 py-4 font-medium">
+                        <span className="block truncate" title={repo.language ?? "Unknown"}>
+                          {repo.language ?? "Unknown"}
+                        </span>
+                      </td>
                       <td className={`px-4 py-4 font-medium ${repo.maintainerScore >= 0.8 ? "text-emerald-400" : repo.maintainerScore >= 0.5 ? "text-yellow-300" : "text-red-400"}`}>
                         {percent(repo.maintainerScore)}
                       </td>
                       <td className="px-4 py-4">
                         <div className="space-y-1.5">
                           <StatusBadge status={repo.indexingStatus} />
-                          {detail ? (
-                            <div className="text-xs font-medium text-zinc-500">
-                              {detail}
-                            </div>
-                          ) : null}
+                          <div className="h-4 truncate text-xs font-medium text-zinc-500">
+                            {detail ?? ""}
+                          </div>
                         </div>
                       </td>
                       <td className="px-4 py-4 font-medium">{formatNumber(repo.openIssues)}</td>
                       <td className="px-4 py-4 text-right">
                         <Button
                           type="button"
-                          size="sm"
+                          size="default"
                           variant="outline"
                           disabled={reindexMutation.isPending && reindexMutation.variables === repo.id}
                           onClick={() => reindexMutation.mutate(repo.id)}
-                          className={repo.indexingStatus === "FAILED" ? "border-red-500/40 text-red-400 hover:border-red-500/60 hover:text-red-300" : ""}
+                          className={`h-10 min-w-28 whitespace-nowrap ${
+                            repo.indexingStatus === "FAILED"
+                              ? "border-red-500/40 text-red-400 hover:border-red-500/60 hover:text-red-300"
+                              : ""
+                          }`}
                         >
                           <RefreshCw className="h-4 w-4" />
                           {repo.indexingStatus === "FAILED" ? "Retry" : "Re-index"}
@@ -220,9 +238,9 @@ export function AdminReposPage() {
                     </tr>
                   );
                 })}
-                {filteredRepos?.length === 0 ? (
+                {visibleRows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-sm font-medium text-zinc-400">
+                    <td colSpan={7} className="h-[660px] px-4 py-10 text-center text-sm font-medium text-zinc-400">
                       No repos match this view.
                     </td>
                   </tr>

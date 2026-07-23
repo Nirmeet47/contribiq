@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 const usersQuerySchema = adminPaginationSchema.extend({
   role: z.enum(["USER", "ADMIN"]).optional(),
+  q: z.string().trim().max(120).optional(),
 });
 
 export async function GET(request: Request) {
@@ -19,16 +20,31 @@ export async function GET(request: Request) {
     page: searchParams.get("page") || undefined,
     pageSize: searchParams.get("pageSize") || undefined,
     role: searchParams.get("role") || undefined,
+    q: searchParams.get("q") || undefined,
   });
 
   if (!parsed.success) {
     return NextResponse.json({ error: z.treeifyError(parsed.error) }, { status: 400 });
   }
 
-  const { page, pageSize, role } = parsed.data;
-  const where = role ? { role } : {};
-  const [count, users] = await Promise.all([
+  const { page, pageSize, role, q } = parsed.data;
+  const searchWhere = q
+    ? {
+        OR: [
+          { username: { contains: q, mode: "insensitive" as const } },
+          { name: { contains: q, mode: "insensitive" as const } },
+        ],
+      }
+    : {};
+  const where = {
+    ...searchWhere,
+    ...(role ? { role } : {}),
+  };
+  const [count, allCount, adminCount, userCount, users] = await Promise.all([
     prisma.user.count({ where }),
+    prisma.user.count({ where: searchWhere }),
+    prisma.user.count({ where: { ...searchWhere, role: "ADMIN" } }),
+    prisma.user.count({ where: { ...searchWhere, role: "USER" } }),
     prisma.user.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -53,6 +69,11 @@ export async function GET(request: Request) {
   ]);
 
   return NextResponse.json({
+    counts: {
+      ALL: allCount,
+      ADMIN: adminCount,
+      USER: userCount,
+    },
     users: users.map((user) => ({
       id: user.id,
       username: user.username,
