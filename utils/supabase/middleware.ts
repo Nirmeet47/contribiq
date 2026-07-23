@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { prisma } from '@/lib/prisma'
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -59,6 +60,23 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
+  }
+
+  if (user && pathname.startsWith('/admin')) {
+    const githubIdStr = user.user_metadata?.provider_id
+    const githubId = typeof githubIdStr === 'string' ? Number.parseInt(githubIdStr, 10) : NaN
+    const dbUser = Number.isNaN(githubId)
+      ? null
+      : await prisma.user.findUnique({
+          where: { githubId },
+          select: { role: true },
+        })
+
+    if (dbUser?.role !== 'ADMIN') {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
+      return NextResponse.redirect(url)
+    }
   }
 
   // If user is logged in and trying to access login page, redirect to dashboard

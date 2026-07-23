@@ -39,3 +39,15 @@ enum IssueType {
 enum FeedbackType {
   not_interested
 }
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum IndexingStatus {
+  NOT_INDEXED
+  PENDING
+  INDEXED
+  FAILED
+}

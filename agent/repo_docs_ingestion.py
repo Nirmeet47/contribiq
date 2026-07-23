@@ -77,12 +77,71 @@ def fetch_repos(conn, repo_filter: str | None = None) -> list[dict[str, Any]]:
             '''
             SELECT id, owner, name, "fullName"
             FROM repos
+            WHERE "indexingStatus" = 'PENDING'
+            ORDER BY
+              "createdAt"
+            '''
+        )
+        pending_repos = cur.fetchall()
+        if pending_repos:
+            cur.close()
+            return pending_repos
+
+        cur.execute(
+            '''
+            SELECT id, owner, name, "fullName"
+            FROM repos
             ORDER BY "createdAt"
             '''
         )
     repos = cur.fetchall()
     cur.close()
     return repos
+
+
+def update_repo_indexing_status(
+    conn,
+    repo_id: str,
+    status: str,
+    error: str | None = None,
+) -> None:
+    cur = conn.cursor()
+    if status == "INDEXED":
+        cur.execute(
+            '''
+            UPDATE repos
+            SET "indexingStatus" = 'INDEXED',
+                "lastIndexedAt" = now(),
+                "indexingError" = NULL,
+                "updatedAt" = now()
+            WHERE id = %s
+            ''',
+            (repo_id,),
+        )
+    elif status == "FAILED":
+        cur.execute(
+            '''
+            UPDATE repos
+            SET "indexingStatus" = 'FAILED',
+                "indexingError" = %s,
+                "updatedAt" = now()
+            WHERE id = %s
+            ''',
+            ((error or "Repo docs ingestion failed")[:2000], repo_id),
+        )
+    elif status == "PENDING":
+        cur.execute(
+            '''
+            UPDATE repos
+            SET "indexingStatus" = 'PENDING',
+                "indexingError" = NULL,
+                "updatedAt" = now()
+            WHERE id = %s
+            ''',
+            (repo_id,),
+        )
+    cur.close()
+    conn.commit()
 
 
 def fetch_doc(client: httpx.Client, owner: str, repo: str, path: str) -> tuple[str, str] | None | object:
@@ -234,8 +293,7 @@ def ingest_doc(
     for chunk_index, chunk in enumerate(chunks):
         vector = embed(embedder, chunk)
         if vector is None:
-            log.warning("%s chunk %s/%s failed; old chunks stay intact", path, chunk_index + 1, len(chunks))
-            return False, 0
+            raise RuntimeError(f"{path} chunk {chunk_index + 1}/{len(chunks)} embedding failed")
         vectors.append(vector)
         time.sleep(0.1)
 
@@ -251,11 +309,15 @@ def ingest_repo(conn, github: httpx.Client, embedder: genai.Client, repo: dict[s
     log.info("[%s/%s] %s", index, total, repo["fullName"])
     changed = False
     total_chunks = 0
+    update_repo_indexing_status(conn, repo["id"], "PENDING")
     for path in DOC_PATHS:
         document = fetch_doc(github, repo["owner"], repo["name"], path)
+        if document is FETCH_FAILED:
+            raise RuntimeError(f"{path} fetch failed")
         doc_changed, inserted = ingest_doc(conn, embedder, repo, path, document)
         changed = changed or doc_changed
         total_chunks += inserted
+    update_repo_indexing_status(conn, repo["id"], "INDEXED")
     return changed, total_chunks
 
 
@@ -278,8 +340,13 @@ def ingest_repo_docs(repo_filter: str | None = None) -> dict[str, int | bool]:
                 repo_changed, inserted = ingest_repo(conn, github, embedder, repo, index, len(repos))
             except QuotaExhausted as exc:
                 log.warning("Gemini quota exhausted: %s", exc)
+                update_repo_indexing_status(conn, repo["id"], "FAILED", str(exc))
                 stopped_early = True
                 break
+            except Exception as exc:
+                log.warning("%s docs ingestion failed: %s", repo["fullName"], exc)
+                update_repo_indexing_status(conn, repo["id"], "FAILED", str(exc))
+                continue
             if repo_changed:
                 changed += 1
             chunks += inserted
