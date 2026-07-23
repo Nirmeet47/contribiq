@@ -8,7 +8,7 @@ const statusClasses: Record<IndexingStatus, string> = {
   INDEXED: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
   PENDING: "border-yellow-500/30 bg-yellow-500/10 text-yellow-300",
   NOT_INDEXED: "border-zinc-700 bg-zinc-900 text-zinc-300",
-  FAILED: "border-red-500/30 bg-red-500/10 text-red-300",
+  FAILED: "border-red-500/40 bg-red-500/10 text-red-400",
 };
 
 const statusIcons = {
@@ -67,7 +67,7 @@ export function PageHeader({ title, subtitle }: { title: string; subtitle: strin
 
 export function LoadingState({ label }: { label: string }) {
   return (
-    <div className="rounded-sm border border-zinc-800 bg-zinc-950 p-8 text-center text-sm font-medium text-zinc-300">
+    <div className="flex min-h-[260px] items-center justify-center rounded-sm border border-zinc-800 bg-zinc-950 p-8 text-center text-sm font-medium text-zinc-300">
       {label}
     </div>
   );

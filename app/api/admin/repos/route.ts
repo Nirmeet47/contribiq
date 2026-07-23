@@ -27,8 +27,13 @@ export async function GET(request: Request) {
 
   const { page, pageSize, status } = parsed.data;
   const where = status ? { indexingStatus: status } : {};
-  const [count, repos] = await Promise.all([
+  const [count, allCount, failedCount, pendingCount, indexedCount, notIndexedCount, repos] = await Promise.all([
     prisma.repo.count({ where }),
+    prisma.repo.count(),
+    prisma.repo.count({ where: { indexingStatus: "FAILED" } }),
+    prisma.repo.count({ where: { indexingStatus: "PENDING" } }),
+    prisma.repo.count({ where: { indexingStatus: "INDEXED" } }),
+    prisma.repo.count({ where: { indexingStatus: "NOT_INDEXED" } }),
     prisma.repo.findMany({
       where,
       orderBy: [{ indexingStatus: "asc" }, { updatedAt: "desc" }],
@@ -55,6 +60,13 @@ export async function GET(request: Request) {
   ]);
 
   return NextResponse.json({
+    counts: {
+      ALL: allCount,
+      FAILED: failedCount,
+      PENDING: pendingCount,
+      INDEXED: indexedCount,
+      NOT_INDEXED: notIndexedCount,
+    },
     repos: repos.map((repo) => ({
       id: repo.id,
       fullName: repo.fullName,
@@ -70,4 +82,19 @@ export async function GET(request: Request) {
     })),
     pagination: paginationMeta({ page, pageSize, count }),
   });
+}
+
+export async function POST() {
+  const auth = await requireCurrentAdminUserId();
+  if (auth.error) return auth.error;
+
+  const result = await prisma.repo.updateMany({
+    where: { indexingStatus: "NOT_INDEXED" },
+    data: {
+      indexingStatus: "PENDING",
+      indexingError: null,
+    },
+  });
+
+  return NextResponse.json({ queued: result.count });
 }
