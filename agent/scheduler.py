@@ -61,8 +61,8 @@ def main() -> None:
     run_on_start = os.getenv("AI_SCHEDULER_RUN_ON_START", "true").lower() != "false"
     now = datetime.now()
     jobs = [
-        ScheduledJob("repo_discovery", discovery_hours * 3600, discover, now),
         ScheduledJob("repo_docs_ingestion", docs_hours * 3600, ingest_repo_docs, now),
+        ScheduledJob("repo_discovery", discovery_hours * 3600, discover, now),
         ScheduledJob("issue_fetch", issue_fetch_hours * 3600, lambda: sync_issues(classify_after_fetch=True), now),
         ScheduledJob("issue_classification", issue_classify_hours * 3600, classify_unclassified_issues, now),
         ScheduledJob("match_scoring", match_scoring_hours * 3600, score_matches, now),

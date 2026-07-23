@@ -13,12 +13,16 @@ model Repo {
   maintainerScore Float     @default(0) // how responsive the maintainers are, 0–1
   activityScore   Float     @default(0) // recent commit/PR activity, 0–1
   lastFetchedAt   DateTime?
+  indexingStatus  IndexingStatus @default(NOT_INDEXED)
+  lastIndexedAt   DateTime?
+  indexingError   String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   issues Issue[]
   docs   RepoDoc[]
 
+  @@index([indexingStatus])
   @@index([language])
   @@index([activityScore])
   @@index([maintainerScore])

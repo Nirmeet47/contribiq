@@ -11,6 +11,7 @@ model User {
   timeCommitment Int      @default(0) // hours/week the dev said they can contribute
   profileAnalyzed Boolean @default(false) // true once github analysis/skill profile generation has completed
   onboarded      Boolean  @default(false) // flips to true once they finish the onboarding wizard
+  role           Role     @default(USER)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
