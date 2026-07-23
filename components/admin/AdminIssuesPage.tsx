@@ -1,9 +1,10 @@
 "use client";
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Loader2, Sparkles, Search } from "lucide-react";
 import { useDeferredValue, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import {
   BoolBadge,
@@ -48,15 +49,35 @@ async function fetchIssues(page: number, filter: IssueFilter, search: string) {
   return (await response.json()) as IssuesResponse;
 }
 
+async function classifyIssue(issueId: string) {
+  const response = await fetch(`/api/admin/issues/${issueId}/classify`, { method: "POST" });
+  const payload = await response.json().catch(() => null) as { error?: string } | null;
+  if (!response.ok) throw new Error(payload?.error || "Failed to classify issue");
+  return payload;
+}
+
 export function AdminIssuesPage() {
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<IssueFilter>("ALL");
   const [search, setSearch] = useState("");
+  const [classificationError, setClassificationError] = useState<string | null>(null);
   const deferredSearch = useDeferredValue(search);
   const [page, setPage] = useState(1);
   const issuesQuery = useQuery({
     queryKey: ["admin", "issues", page, filter, deferredSearch],
     queryFn: () => fetchIssues(page, filter, deferredSearch),
     placeholderData: keepPreviousData,
+  });
+  const classifyMutation = useMutation({
+    mutationFn: classifyIssue,
+    onMutate: () => setClassificationError(null),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "issues"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "overview"] });
+    },
+    onError: (error) => {
+      setClassificationError(error instanceof Error ? error.message : "Issue could not be classified.");
+    },
   });
 
   function selectFilter(next: IssueFilter) {
@@ -109,18 +130,20 @@ export function AdminIssuesPage() {
 
       {issuesQuery.isLoading ? <LoadingState label="Loading issues..." /> : null}
       {issuesQuery.isError ? <ErrorState label="Issues could not be loaded." /> : null}
+      {classificationError ? <ErrorState label={classificationError} /> : null}
 
       {issuesQuery.data ? (
         <section className="overflow-hidden rounded-sm border border-zinc-800 bg-zinc-950 shadow-sm shadow-black/20">
           <div className="overflow-x-auto">
             <table className="w-full table-fixed divide-y divide-zinc-800 text-sm">
               <colgroup>
-                <col className="w-[39%]" />
-                <col className="w-[19%]" />
+                <col className="w-[31%]" />
+                <col className="w-[17%]" />
                 <col className="w-[10%]" />
                 <col className="w-[10%]" />
                 <col className="w-[10%]" />
                 <col className="w-[12%]" />
+                <col className="w-[10%]" />
               </colgroup>
               <thead className="bg-zinc-900/80 text-left text-xs font-medium uppercase text-zinc-500">
                 <tr>
@@ -130,6 +153,7 @@ export function AdminIssuesPage() {
                   <th className="px-4 py-3">Type</th>
                   <th className="px-4 py-3">Classified</th>
                   <th className="px-4 py-3">Updated</th>
+                  <th className="px-4 py-3 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800">
@@ -149,11 +173,32 @@ export function AdminIssuesPage() {
                     <td className="px-4 py-4">{issue.issueType ? <Badge variant="outline">{issue.issueType}</Badge> : <span className="text-zinc-500">None</span>}</td>
                     <td className="px-4 py-4"><BoolBadge value={issue.classified} /></td>
                     <td className="whitespace-nowrap px-4 py-4 font-medium text-zinc-300">{formatDate(issue.updatedAt)}</td>
+                    <td className="px-4 py-4 text-right">
+                      {issue.classified ? (
+                        <span className="text-sm font-medium text-zinc-500">Ready</span>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={classifyMutation.isPending}
+                          onClick={() => classifyMutation.mutate(issue.id)}
+                          className="h-9 min-w-0 gap-1.5 whitespace-nowrap px-3 text-xs font-medium border-emerald-500/40 text-emerald-300 hover:border-emerald-500/70 hover:text-emerald-200"
+                        >
+                          {classifyMutation.isPending && classifyMutation.variables === issue.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-4 w-4" />
+                          )}
+                          Classify
+                        </Button>
+                      )}
+                    </td>
                   </tr>
                 ))}
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-sm font-medium text-zinc-400">
+                    <td colSpan={7} className="px-4 py-10 text-center text-sm font-medium text-zinc-400">
                       No issues match this view.
                     </td>
                   </tr>
