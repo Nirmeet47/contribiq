@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { aiServiceHeaders } from "@/lib/ai-service-auth";
 import { getCurrentAuthUser } from "@/lib/auth-user";
 import { prisma } from "@/lib/prisma";
 import {
@@ -77,10 +78,10 @@ async function postToAiProjectAsk(
 ) {
   return fetch(`${getAiApiBaseUrl()}/projects/${projectId}/ask`, {
     method: "POST",
-    headers: {
+    headers: aiServiceHeaders({
       "Content-Type": "application/json",
       "X-ContribIQ-User-Id": userId,
-    },
+    }),
     body: JSON.stringify(payload),
   });
 }

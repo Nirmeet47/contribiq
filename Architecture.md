@@ -91,7 +91,7 @@ Key route handlers:
 - `/api/discover/trending`: trending discovery data.
 - `/api/discover/by-tech/[tag]`: technology-filtered discovery.
 - `/api/projects`: project list.
-- `/api/projects/directory`: catalog directory view.
+- `/api/projects`: catalog directory view.
 - `/api/projects/trending`: trending projects.
 - `/api/projects/[projectId]`: project detail payload.
 - `/api/projects/[projectId]/ask`: authenticated proxy to Python project Q&A.

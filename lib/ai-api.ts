@@ -1,3 +1,5 @@
+import { aiServiceHeaders } from "@/lib/ai-service-auth";
+
 function getAiApiBaseUrl() {
   return process.env.AI_API_BASE_URL ?? "http://127.0.0.1:8001";
 }
@@ -5,7 +7,7 @@ function getAiApiBaseUrl() {
 export async function scoreMatchesForUser(userId: string) {
   const response = await fetch(`${getAiApiBaseUrl()}/matches/score`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: aiServiceHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ userId }),
   });
 
@@ -19,7 +21,7 @@ export async function scoreMatchesForUser(userId: string) {
 export async function refreshSkillEmbeddingForUser(userId: string) {
   const response = await fetch(`${getAiApiBaseUrl()}/skills/refresh-embedding`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: aiServiceHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ userId }),
   });
 

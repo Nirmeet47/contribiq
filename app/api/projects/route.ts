@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { validationError } from "@/lib/api-response";
 import { pageQuerySchema } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 import { serializeProjectSummary } from "@/lib/project-serializer";
@@ -76,7 +77,7 @@ export async function GET(request: Request) {
   });
 
   if (!parsed.success) {
-    return NextResponse.json({ error: z.treeifyError(parsed.error) }, { status: 400 });
+    return validationError(parsed.error);
   }
 
   const {
@@ -116,9 +117,19 @@ export async function GET(request: Request) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.min(page, totalPages);
   const start = (currentPage - 1) * pageSize;
+  const canSortInDatabase = ["activity", "activityScore", "stars", "name", "maintainerScore"].includes(sort);
+  const orderBy =
+    sort === "stars"
+      ? { stars: "desc" as const }
+      : sort === "name"
+        ? { fullName: "asc" as const }
+        : sort === "maintainerScore"
+          ? { maintainerScore: "desc" as const }
+          : { activityScore: "desc" as const };
 
   const repos: ProjectListRepo[] = await prisma.repo.findMany({
     where,
+    orderBy: canSortInDatabase ? orderBy : undefined,
     select: {
       id: true,
       owner: true,
@@ -133,8 +144,8 @@ export async function GET(request: Request) {
       lastFetchedAt: true,
       updatedAt: true,
     },
-    skip: start,
-    take: pageSize,
+    skip: canSortInDatabase ? start : undefined,
+    take: canSortInDatabase ? pageSize : undefined,
   });
 
   const repoIds = repos.map((repo: ProjectListRepo) => repo.id);
@@ -165,13 +176,14 @@ export async function GET(request: Request) {
     ])
   );
 
-  const projects = orderProjects(repos
+  const sortedProjects = orderProjects(repos
     .map((repo: ProjectListRepo) =>
       serializeProjectSummary(repo, {
         openIssueCount: openCountByRepo.get(repo.id) ?? 0,
         classifiedIssueCount: classifiedCountByRepo.get(repo.id) ?? 0,
       })
     ), sort);
+  const projects = canSortInDatabase ? sortedProjects : sortedProjects.slice(start, start + pageSize);
 
   const categories = Array.from(
     new Set((categoryRows as CategoryRow[]).flatMap((repo: CategoryRow) => repo.categories).filter(Boolean))

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { badRequest, internalError, notFound, unauthorized } from "@/lib/api-response";
 import { refreshSkillEmbeddingForUser, scoreMatchesForUser } from "@/lib/ai-api";
 import { invalidateUserFeedCaches } from "@/lib/feed-cache";
 import { prisma } from "@/lib/prisma";
@@ -21,14 +22,14 @@ async function getAuthenticatedGithubId() {
 
   if (error || !user) {
     return {
-      error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      error: unauthorized(),
     };
   }
 
   const githubIdStr = user.user_metadata?.provider_id;
   if (!githubIdStr) {
     return {
-      error: NextResponse.json({ error: "No GitHub ID" }, { status: 400 }),
+      error: badRequest("No GitHub ID"),
     };
   }
 
@@ -59,7 +60,7 @@ export async function GET() {
       skills: canonicalizeSkills(dbUser.skillProfile.skills),
     });
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 });
+    return internalError("api/skills:get", error);
   }
 }
 
@@ -74,14 +75,14 @@ export async function PATCH(request: Request) {
     });
 
     if (!dbUser) {
-      return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+      return notFound("Profile not found");
     }
 
     const body = await request.json();
     const incomingSkills = body.skills;
 
     if (!Array.isArray(incomingSkills)) {
-      return NextResponse.json({ error: "Invalid skills payload" }, { status: 400 });
+      return badRequest("Invalid skills payload");
     }
 
     const skillsByName = new Map<string, { name: string; level: SkillLevel }>();
@@ -90,7 +91,7 @@ export async function PATCH(request: Request) {
       const level = skill?.level as SkillLevel;
 
       if (!name || !SKILL_LEVELS.has(level)) {
-        return NextResponse.json({ error: "Invalid skills payload" }, { status: 400 });
+        return badRequest("Invalid skills payload");
       }
 
       const [canonicalSkill] = canonicalizeSkills([{ name, level }]);
@@ -198,6 +199,6 @@ export async function PATCH(request: Request) {
       matchScoringTriggered,
     });
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 });
+    return internalError("api/skills:patch", error);
   }
 }
