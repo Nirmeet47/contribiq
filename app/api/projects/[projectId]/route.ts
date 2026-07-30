@@ -250,17 +250,56 @@ function calculateContributionFriendliness({
   );
 }
 
+function knowledgeArea(filePath: string) {
+  const lower = filePath.toLowerCase();
+  if (["package.json", "pyproject.toml", "requirements.txt", "cargo.toml", "go.mod", "pubspec.yaml"].includes(lower)) {
+    return "Stack";
+  }
+  if (lower.startsWith(".github/")) return "Workflow";
+  if (lower.startsWith("docs/") || lower.startsWith("doc/") || lower.startsWith("documentation/")) return "Docs";
+  if (lower.includes("contribut")) return "Contributing";
+  if (lower.includes("architecture") || lower.includes("design")) return "Architecture";
+  if (lower.includes("test")) return "Testing";
+  if (lower.includes("readme")) return "Overview";
+  return "Knowledge";
+}
+
+type KnowledgeFileRow = {
+  filePath: string;
+  chunks: number;
+};
+
+async function getKnowledgeStats(projectId: string) {
+  const rows = await prisma.$queryRaw<KnowledgeFileRow[]>`
+    SELECT "filePath", COUNT(*)::int AS chunks
+    FROM repo_docs
+    WHERE "repoId" = ${projectId}
+    GROUP BY "filePath"
+    ORDER BY "filePath"
+  `;
+
+  return {
+    fileCount: rows.length,
+    chunkCount: rows.reduce((sum, row) => sum + row.chunks, 0),
+    areas: Array.from(new Set(rows.map((row) => knowledgeArea(row.filePath)))),
+    files: rows.map((row) => row.filePath).slice(0, 8),
+  };
+}
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
-  const cacheKey = `project:${projectId}:v3`;
+  const cacheKey = `project:${projectId}:v4`;
   const cached = await redis.get(cacheKey);
 
   if (cached) {
     const cachedPayload = JSON.parse(cached);
-    if (typeof cachedPayload?.project?.contributionFriendliness === "number") {
+    if (
+      typeof cachedPayload?.project?.contributionFriendliness === "number" &&
+      typeof cachedPayload?.knowledgeStats?.fileCount === "number"
+    ) {
       return NextResponse.json(cachedPayload);
     }
   }
@@ -284,10 +323,11 @@ export async function GET(
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  const [issueBreakdown, techStack, githubStats, openIssues, openIssueLabels] = await Promise.all([
+  const [issueBreakdown, techStack, githubStats, knowledgeStats, openIssues, openIssueLabels] = await Promise.all([
     getIssueTypeBreakdown(projectId),
     fetchTechStack(repo.owner, repo.name, repo.language),
     fetchGithubStats(repo.owner, repo.name),
+    getKnowledgeStats(projectId),
     prisma.issue.findMany({
       where: { repoId: projectId, state: "open", classified: true },
       orderBy: { updatedAt: "desc" },
@@ -320,6 +360,7 @@ export async function GET(
       }),
     },
     githubStats,
+    knowledgeStats,
     issueBreakdown,
     techStack,
     openIssues,

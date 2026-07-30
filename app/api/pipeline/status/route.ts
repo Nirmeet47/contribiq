@@ -10,7 +10,7 @@ async function getQueueStatus() {
     queues: [],
     pythonJobs: [
       { name: "Repo discovery", command: "npm run ai:worker" },
-      { name: "Repo docs ingestion", command: "npm run ai:worker" },
+      { name: "Repo knowledge ingestion", command: "npm run ai:worker" },
       { name: "Issue fetch", command: "npm run ai:worker" },
       { name: "Issue classification + embeddings", command: "npm run ai:worker" },
       { name: "Match scoring", command: "npm run ai:worker" },

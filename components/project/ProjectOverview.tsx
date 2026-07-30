@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, GitPullRequest, History, MessageSquare, Star, UsersRound } from "lucide-react";
+import { ArrowDown, BookOpenText, GitPullRequest, History, MessageSquare, Star, UsersRound } from "lucide-react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Button } from "@/components/ui/button";
 import type { IssueType, ProjectResponse } from "@/components/project/types";
@@ -104,7 +104,7 @@ export function ProjectHeader({
           </a>
           <Button type="button" variant="outline" onClick={onOpenChat} className="h-10">
             <MessageSquare className="h-4 w-4" />
-            Ask the project docs
+            Ask repo knowledge
           </Button>
           <a
             href="#issues"
@@ -116,11 +116,16 @@ export function ProjectHeader({
         </div>
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <ProjectStat label="Stars" value={project.project.stars.toLocaleString()} icon={Star} />
         <ProjectStat label="Contributors" value={project.githubStats.contributors.toLocaleString()} icon={UsersRound} />
         <ProjectStat label="Open PRs" value={project.githubStats.openPullRequests.toLocaleString()} icon={GitPullRequest} />
         <ProjectStat label="Last commit" value={formatRelativeTime(project.githubStats.lastCommitAt)} icon={History} />
+        <ProjectStat
+          label="Knowledge files"
+          value={project.knowledgeStats.fileCount > 0 ? project.knowledgeStats.fileCount.toLocaleString() : "Not indexed"}
+          icon={BookOpenText}
+        />
       </div>
     </header>
   );

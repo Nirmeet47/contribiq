@@ -61,6 +61,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       <ProjectDocsChatSheet
         projectId={projectId}
         projectName={project.project.name}
+        knowledgeStats={project.knowledgeStats}
         open={chatOpen}
         onOpenChange={setChatOpen}
       />

@@ -30,6 +30,12 @@ export type ProjectResponse = {
     openPullRequests: number;
     lastCommitAt: string | null;
   };
+  knowledgeStats: {
+    fileCount: number;
+    chunkCount: number;
+    areas: string[];
+    files: string[];
+  };
   issueBreakdown: Record<IssueType, number>;
   techStack: string[];
   openIssues: ProjectIssue[];

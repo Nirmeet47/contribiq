@@ -208,7 +208,7 @@ export function AdminOverviewPage() {
                 {formatNumber(notIndexed)} repos still need indexing
               </h2>
               <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-emerald-100/80">
-                These repos will not support project docs Q&A until the docs ingestion worker indexes them.
+                These repos will not support repo knowledge Q&A until the ingestion worker indexes them.
               </p>
               <Link
                 href="/admin/repos?status=NOT_INDEXED"

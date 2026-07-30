@@ -29,10 +29,11 @@ EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIMENSIONS = 768
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 SYSTEM_PROMPT = (
-    "You are a helpful project documentation assistant. Answer the latest user question first. "
+    "You are a helpful repository knowledge assistant. Answer the latest user question first. "
     "Use conversation history only to understand follow-ups, not to override the latest question. "
     "For greetings or small talk, respond briefly and invite the user to ask about the project. "
-    "For project questions, answer only from the provided docs, open issues, and repo stats. "
+    "For project questions, answer only from the provided indexed files, open issues, and repo stats. "
+    "When useful, mention the source file path from the retrieved chunks. "
     "If the provided project context does not contain the answer, say what is missing and suggest "
     "where the contributor should look next."
 )
@@ -69,13 +70,32 @@ def get_repo(repo_id: str) -> dict[str, Any] | None:
             return cur.fetchone()
 
 
-def search_docs(repo_id: str, query: str, limit: int = 4) -> list[str]:
+def knowledge_area(file_path: str) -> str:
+    lower = file_path.lower()
+    if lower in {"package.json", "pyproject.toml", "requirements.txt", "cargo.toml", "go.mod", "pubspec.yaml"}:
+        return "stack and dependencies"
+    if lower.startswith(".github/"):
+        return "maintainer workflow"
+    if lower.startswith(("docs/", "doc/", "documentation/")):
+        return "documentation"
+    if "contribut" in lower:
+        return "contribution guide"
+    if "architecture" in lower or "design" in lower:
+        return "architecture"
+    if "test" in lower:
+        return "testing"
+    if "readme" in lower:
+        return "overview"
+    return "repo knowledge"
+
+
+def search_docs(repo_id: str, query: str, limit: int = 7) -> list[dict[str, str]]:
     query_vector = vector_literal(embed_query(query))
     with psycopg2.connect(database_url()) as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 """
-                SELECT "chunkText"
+                SELECT "filePath", "chunkText"
                 FROM repo_docs
                 WHERE "repoId" = %s
                 ORDER BY embedding <=> %s::vector
@@ -83,7 +103,38 @@ def search_docs(repo_id: str, query: str, limit: int = 4) -> list[str]:
                 """,
                 (repo_id, query_vector, limit),
             )
-            return [row["chunkText"] for row in cur.fetchall()]
+            return [
+                {
+                    "filePath": row["filePath"],
+                    "area": knowledge_area(row["filePath"]),
+                    "chunkText": row["chunkText"],
+                }
+                for row in cur.fetchall()
+            ]
+
+
+def get_doc_inventory(repo_id: str) -> list[dict[str, Any]]:
+    with psycopg2.connect(database_url()) as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT "filePath", COUNT(*)::int AS chunks
+                FROM repo_docs
+                WHERE "repoId" = %s
+                GROUP BY "filePath"
+                ORDER BY "filePath"
+                LIMIT 30
+                """,
+                (repo_id,),
+            )
+            return [
+                {
+                    "filePath": row["filePath"],
+                    "area": knowledge_area(row["filePath"]),
+                    "chunks": row["chunks"],
+                }
+                for row in cur.fetchall()
+            ]
 
 
 def get_open_issues(repo_id: str) -> list[dict[str, Any]]:
@@ -136,20 +187,28 @@ def get_repo_stats(repo_id: str) -> dict[str, Any] | None:
 
 def build_context(repo: dict[str, Any], query: str) -> dict[str, Any]:
     docs = search_docs(repo["id"], query)
+    inventory = get_doc_inventory(repo["id"])
     issues = get_open_issues(repo["id"])
     stats = get_repo_stats(repo["id"])
-    return {"repo": repo, "docs": docs, "issues": issues, "stats": stats}
+    return {"repo": repo, "docs": docs, "inventory": inventory, "issues": issues, "stats": stats}
 
 
 def build_prompt(query: str, context: dict[str, Any]) -> str:
     docs_text = (
-        "\n\n---\n\n".join(f"Chunk {index + 1}:\n{chunk}" for index, chunk in enumerate(context["docs"]))
-        or "No README.md or CONTRIBUTING.md chunks are indexed for this repo yet."
+        "\n\n---\n\n".join(
+            f"Chunk {index + 1} [{doc['area']}] from {doc['filePath']}:\n{doc['chunkText']}"
+            for index, doc in enumerate(context["docs"])
+        )
+        or "No repository knowledge chunks are indexed for this repo yet."
     )
+    inventory_text = json.dumps(context["inventory"], ensure_ascii=False)
     issues_text = json.dumps(context["issues"], ensure_ascii=False)
     stats_text = json.dumps(context["stats"], ensure_ascii=False)
     repo = context["repo"]
     return f"""Repo: {repo['owner']}/{repo['name']}
+
+Indexed knowledge inventory:
+{inventory_text}
 
 Retrieved docs:
 {docs_text}
@@ -266,7 +325,7 @@ def stream_project_answer(
         try:
             yield from stream_with_groq(prompt, chat_history)
         except Exception:
-            log.exception("Groq project docs stream failed")
-            yield "The project docs answer failed while streaming. Check the AI API logs and Groq configuration."
+            log.exception("Groq repo knowledge stream failed")
+            yield "The repo knowledge answer failed while streaming. Check the AI API logs and Groq configuration."
 
     return generate()

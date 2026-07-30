@@ -8,6 +8,7 @@ import re
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 import psycopg2
@@ -27,11 +28,76 @@ log = logging.getLogger("repo_docs_ingestion")
 
 GITHUB_API_VERSION = "2022-11-28"
 DOC_PATHS = ("README.md", "CONTRIBUTING.md")
+MAX_DOC_FILES_PER_REPO = int(os.getenv("REPO_DOCS_MAX_FILES", "18"))
+MAX_DOC_BYTES = int(os.getenv("REPO_DOCS_MAX_BYTES", str(220_000)))
 EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIMENSIONS = 768
 CHUNK_TOKENS = 500
 CHUNK_OVERLAP = 50
 FETCH_FAILED = object()
+
+DOC_FILE_NAMES = {
+    "readme",
+    "contributing",
+    "contribution",
+    "code_of_conduct",
+    "security",
+    "support",
+    "governance",
+    "architecture",
+    "design",
+    "roadmap",
+    "changelog",
+    "license",
+    "getting-started",
+    "quickstart",
+    "development",
+    "install",
+    "setup",
+    "testing",
+    "deployment",
+    "configuration",
+    "troubleshooting",
+}
+DOC_EXTENSIONS = {".md", ".mdx", ".rst", ".txt", ".adoc"}
+CONFIG_FILE_NAMES = {
+    "package.json",
+    "pyproject.toml",
+    "requirements.txt",
+    "cargo.toml",
+    "go.mod",
+    "pubspec.yaml",
+    "composer.json",
+    "gemfile",
+    "dockerfile",
+    "docker-compose.yml",
+    "makefile",
+}
+HIGH_SIGNAL_DIRS = {
+    ".github",
+    "docs",
+    "doc",
+    "documentation",
+    "guides",
+    "guide",
+    "examples",
+    "example",
+    "config",
+    "configs",
+}
+SKIP_PATH_PARTS = {
+    ".git",
+    ".next",
+    ".turbo",
+    "node_modules",
+    "vendor",
+    "dist",
+    "build",
+    "coverage",
+    "__pycache__",
+    ".venv",
+    "venv",
+}
 
 
 class QuotaExhausted(Exception):
@@ -159,11 +225,121 @@ def fetch_doc(client: httpx.Client, owner: str, repo: str, path: str) -> tuple[s
         if not encoded:
             return None
         raw_content = base64.b64decode(encoded)
+        if len(raw_content) > MAX_DOC_BYTES:
+            log.info("%s/%s %s too large, skipping", owner, repo, path)
+            return None
         raw_hash = hashlib.sha256(raw_content).hexdigest()
         return raw_content.decode("utf-8", errors="replace"), raw_hash
     except Exception as exc:
         log.warning("%s/%s %s fetch failed: %s", owner, repo, path, exc)
         return FETCH_FAILED
+
+
+def fetch_default_branch(client: httpx.Client, owner: str, repo: str) -> str | object:
+    url = f"https://api.github.com/repos/{owner}/{repo}"
+    try:
+        response = client.get(url, timeout=20)
+        if response.status_code in (403, 429):
+            log.warning("%s/%s metadata rate limited, waiting 60s", owner, repo)
+            time.sleep(60)
+            return FETCH_FAILED
+        if response.status_code == 404:
+            return "main"
+        response.raise_for_status()
+        branch = response.json().get("default_branch")
+        return branch if isinstance(branch, str) and branch else "main"
+    except Exception as exc:
+        log.warning("%s/%s metadata fetch failed: %s", owner, repo, exc)
+        return FETCH_FAILED
+
+
+def fetch_repo_tree(client: httpx.Client, owner: str, repo: str) -> list[dict[str, Any]] | object:
+    default_branch = fetch_default_branch(client, owner, repo)
+    if default_branch is FETCH_FAILED:
+        return FETCH_FAILED
+
+    branch_ref = quote(str(default_branch), safe="")
+    url = f"https://api.github.com/repos/{owner}/{repo}/git/trees/{branch_ref}?recursive=1"
+    try:
+        response = client.get(url, timeout=30)
+        if response.status_code in (403, 429):
+            log.warning("%s/%s tree rate limited, waiting 60s", owner, repo)
+            time.sleep(60)
+            return FETCH_FAILED
+        if response.status_code == 404:
+            return []
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("truncated"):
+            log.info("%s/%s tree is truncated; using returned high-signal paths", owner, repo)
+        tree = payload.get("tree")
+        return tree if isinstance(tree, list) else []
+    except Exception as exc:
+        log.warning("%s/%s tree fetch failed: %s", owner, repo, exc)
+        return FETCH_FAILED
+
+
+def normalize_path(path: str) -> str:
+    return path.replace("\\", "/").strip("/")
+
+
+def is_skipped_path(path: str) -> bool:
+    parts = {part.lower() for part in normalize_path(path).split("/")}
+    return bool(parts & SKIP_PATH_PARTS)
+
+
+def doc_priority(path: str, size: int | None = None) -> int | None:
+    normalized = normalize_path(path)
+    if not normalized or is_skipped_path(normalized):
+        return None
+    if size is not None and size > MAX_DOC_BYTES:
+        return None
+
+    parts = normalized.split("/")
+    lower_parts = [part.lower() for part in parts]
+    filename = lower_parts[-1]
+    stem, extension = os.path.splitext(filename)
+    parent_dirs = set(lower_parts[:-1])
+    root_file = len(parts) == 1
+
+    if filename in CONFIG_FILE_NAMES:
+        return 10 if root_file else 70
+    if root_file and stem in DOC_FILE_NAMES and extension in DOC_EXTENSIONS:
+        return 20
+    if lower_parts[0] == ".github" and extension in DOC_EXTENSIONS:
+        return 30
+    if parent_dirs & {"docs", "doc", "documentation"} and extension in DOC_EXTENSIONS:
+        return 40
+    if parent_dirs & {"guides", "guide", "examples", "example"} and extension in DOC_EXTENSIONS:
+        return 55
+    if parent_dirs & HIGH_SIGNAL_DIRS and extension in DOC_EXTENSIONS:
+        return 65
+    if stem in DOC_FILE_NAMES and extension in DOC_EXTENSIONS:
+        return 75
+    return None
+
+
+def discover_doc_paths(client: httpx.Client, owner: str, repo: str) -> list[str] | object:
+    tree = fetch_repo_tree(client, owner, repo)
+    if tree is FETCH_FAILED:
+        return FETCH_FAILED
+
+    candidates: list[tuple[int, str]] = []
+    for item in tree:
+        if item.get("type") != "blob":
+            continue
+        path = item.get("path")
+        if not isinstance(path, str):
+            continue
+        priority = doc_priority(path, item.get("size") if isinstance(item.get("size"), int) else None)
+        if priority is not None:
+            candidates.append((priority, normalize_path(path)))
+
+    ordered_paths = [path for _, path in sorted(set(candidates), key=lambda item: (item[0], item[1].lower()))]
+    for fallback in reversed(DOC_PATHS):
+        if fallback not in ordered_paths:
+            ordered_paths.insert(0, fallback)
+    return ordered_paths[:MAX_DOC_FILES_PER_REPO]
 
 
 def existing_content_hash(conn, repo_id: str, path: str) -> str | None:
@@ -310,7 +486,11 @@ def ingest_repo(conn, github: httpx.Client, embedder: genai.Client, repo: dict[s
     changed = False
     total_chunks = 0
     update_repo_indexing_status(conn, repo["id"], "PENDING")
-    for path in DOC_PATHS:
+    doc_paths = discover_doc_paths(github, repo["owner"], repo["name"])
+    if doc_paths is FETCH_FAILED:
+        raise RuntimeError("repository file discovery failed")
+    log.info("selected %s knowledge files: %s", len(doc_paths), ", ".join(doc_paths))
+    for path in doc_paths:
         document = fetch_doc(github, repo["owner"], repo["name"], path)
         if document is FETCH_FAILED:
             raise RuntimeError(f"{path} fetch failed")
