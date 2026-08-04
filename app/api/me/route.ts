@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { badRequest, internalError, unauthorized, validationError } from "@/lib/api-response";
 import { encryptGithubToken } from "@/lib/github-token";
 import { canonicalizeSkills } from "@/lib/skills";
 import type { CanonicalSkillInput } from "@/lib/skills";
@@ -144,13 +145,13 @@ export async function GET() {
     const { data: { user }, error } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return unauthorized();
     }
 
     // Extract github ID
     const githubIdStr = user.user_metadata?.provider_id;
     if (!githubIdStr) {
-      return NextResponse.json({ error: "No GitHub ID found on session" }, { status: 400 });
+      return badRequest("No GitHub ID found on session");
     }
 
     const githubId = parseInt(githubIdStr, 10);
@@ -175,7 +176,7 @@ export async function GET() {
     // Never return the token to the client
     return NextResponse.json(formatSafeUser(dbUser));
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return internalError("api/me:get", e);
   }
 }
 
@@ -188,12 +189,12 @@ export async function PATCH(request: Request) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return unauthorized();
     }
 
     const githubIdStr = user.user_metadata?.provider_id;
     if (!githubIdStr) {
-      return NextResponse.json({ error: "No GitHub ID found on session" }, { status: 400 });
+      return badRequest("No GitHub ID found on session");
     }
 
     const body = updateMeSchema.parse(await request.json());
@@ -282,9 +283,9 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ success: true });
   } catch (e) {
     if (e instanceof z.ZodError) {
-      return NextResponse.json({ error: z.treeifyError(e) }, { status: 400 });
+      return validationError(e);
     }
 
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return internalError("api/me:patch", e);
   }
 }

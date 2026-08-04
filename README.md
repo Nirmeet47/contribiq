@@ -74,6 +74,7 @@ GITHUB_TOKEN=
 GITHUB_PAT=
 GITHUB_TOKEN_ENCRYPTION_KEY=
 TOKEN_ENCRYPTION_KEY=
+CONTRIBIQ_SERVICE_TOKEN=
 REDIS_URL=
 GROQ_API_KEY=
 GEMINI_API_KEY=
@@ -86,6 +87,7 @@ Notes:
 
 - `GITHUB_TOKEN` or `GITHUB_PAT` is used for app-level GitHub API calls.
 - `GITHUB_TOKEN_ENCRYPTION_KEY` or `TOKEN_ENCRYPTION_KEY` protects stored user GitHub tokens.
+- `CONTRIBIQ_SERVICE_TOKEN` optionally protects calls from Next.js to the internal Python AI API. Set the same value for both runtimes.
 - `AGENT_URL` points to the onboarding/profiling SSE service in `agent/main.py`.
 - `AI_API_BASE_URL` points to the project Q&A and on-demand AI endpoint in `agent/api.py`.
 - `/env-check` and `/api/env-check` validate the most important services and keys.

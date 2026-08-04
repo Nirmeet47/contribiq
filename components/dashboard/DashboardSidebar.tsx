@@ -43,12 +43,7 @@ export function DashboardSidebar() {
 
   return (
     <aside className="sticky top-0 hidden h-screen w-64 shrink-0 border-r border-zinc-900 bg-zinc-950 p-5 md:block">
-      <Link href="/" className="flex items-center gap-3">
-        <div className="flex h-8 w-8 items-center justify-center bg-white">
-          <Code2 className="h-5 w-5 text-zinc-950" strokeWidth={2.5} />
-        </div>
-        <span className="text-lg font-bold tracking-tight">ContribIQ</span>
-      </Link>
+      <DashboardBrand />
 
       <nav className="mt-8 space-y-2">
         {NAV_ITEMS.map((item) => {
@@ -80,5 +75,63 @@ export function DashboardSidebar() {
         <LogOut className="h-4 w-4" /> Sign Out
       </button>
     </aside>
+  );
+}
+
+function DashboardBrand() {
+  return (
+    <Link href="/" className="flex items-center gap-3">
+      <div className="flex h-8 w-8 items-center justify-center bg-white">
+        <Code2 className="h-5 w-5 text-zinc-950" strokeWidth={2.5} />
+      </div>
+      <span className="text-lg font-bold tracking-tight">ContribIQ</span>
+    </Link>
+  );
+}
+
+export function DashboardMobileNav() {
+  const pathname = usePathname();
+
+  async function handleLogout() {
+    await createClient().auth.signOut();
+    window.location.href = "/login";
+  }
+
+  return (
+    <header className="sticky top-0 z-50 border-b border-zinc-900 bg-zinc-950/95 backdrop-blur-md md:hidden">
+      <div className="flex h-16 items-center justify-between px-4">
+        <DashboardBrand />
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="flex h-9 w-9 items-center justify-center rounded-sm border border-zinc-800 bg-zinc-900 text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white"
+          aria-label="Sign out"
+          title="Sign out"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
+      </div>
+      <nav className="custom-scrollbar flex gap-2 overflow-x-auto border-t border-zinc-900 px-4 py-3">
+        {NAV_ITEMS.map((item) => {
+          const Icon = item.icon;
+          const active = isActive(pathname, item.href);
+
+          return (
+            <Link
+              key={item.label}
+              href={item.href}
+              className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-sm border px-3 text-xs font-bold transition-colors ${
+                active
+                  ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-300"
+                  : "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-700 hover:text-white"
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+    </header>
   );
 }

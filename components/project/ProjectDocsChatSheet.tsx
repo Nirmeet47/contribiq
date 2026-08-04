@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Clock3, Loader2, MessagesSquare, Send } from "lucide-react";
+import { BookOpenText, Clock3, Files, Layers3, Loader2, MessagesSquare, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,19 +13,23 @@ import {
   SheetOverlay,
   SheetTitle,
 } from "@/components/ui/sheet";
-import type { ChatMessage } from "@/components/project/types";
+import type { ChatMessage, ProjectResponse } from "@/components/project/types";
 
 const SUGGESTED_QUESTIONS = [
   "How do I set up locally?",
-  "What is the architecture?",
-  "What conventions should I follow?",
+  "Which files should I read before contributing?",
+  "What architecture and workflow details matter?",
+  "How should I approach a first issue here?",
 ];
 
 const CHAT_ERROR_PREFIXES = [
   "Python AI service is not reachable",
+  "The repo knowledge answer could not be loaded",
+  "The repo knowledge answer failed",
   "The project docs answer could not be loaded",
   "The project docs answer failed",
   "Python AI service failed",
+  "Repo knowledge response did not stream",
   "Project docs response did not stream",
 ];
 
@@ -193,12 +197,12 @@ async function streamProjectAnswer(
     throw new ProjectAnswerError(
       typeof errorPayload.error === "string"
         ? errorPayload.error
-        : "The project docs answer could not be loaded.",
+        : "The repo knowledge answer could not be loaded.",
       rateLimit
     );
   }
 
-  if (!response.body) throw new Error("Project docs response did not stream");
+  if (!response.body) throw new Error("Repo knowledge response did not stream");
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -218,7 +222,7 @@ function isGreeting(value: string) {
 }
 
 function greetingReply(projectName: string) {
-  return `Hi. I can help with ${projectName}'s docs, setup, architecture, contribution flow, and open issues.`;
+  return `Hi. I can help with ${projectName}'s indexed repo knowledge, setup, architecture, contribution flow, and open issues.`;
 }
 
 function isChatErrorMessage(message: ChatMessage) {
@@ -238,11 +242,13 @@ function chatHistoryForApi(messages: ChatMessage[]) {
 export function ProjectDocsChatSheet({
   projectId,
   projectName,
+  knowledgeStats,
   open,
   onOpenChange,
 }: {
   projectId: string;
   projectName: string;
+  knowledgeStats: ProjectResponse["knowledgeStats"];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -318,7 +324,7 @@ export function ProjectDocsChatSheet({
       );
     } catch (error) {
       const errorMessage =
-        error instanceof Error ? error.message : "The project docs answer could not be loaded.";
+        error instanceof Error ? error.message : "The repo knowledge answer could not be loaded.";
       if (error instanceof ProjectAnswerError && error.rateLimit) {
         setRateLimit((current) => ({ ...(current ?? DEFAULT_RATE_LIMIT_STATUS), ...error.rateLimit }));
       }
@@ -351,11 +357,44 @@ export function ProjectDocsChatSheet({
         <SheetHeader className="space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <SheetTitle>Ask the project docs</SheetTitle>
-              <SheetDescription>{projectName}</SheetDescription>
+              <SheetTitle>Ask repo knowledge</SheetTitle>
+              <SheetDescription>
+                {projectName} - {knowledgeStats.fileCount > 0
+                  ? `${knowledgeStats.fileCount} files / ${knowledgeStats.chunkCount} chunks indexed`
+                  : "Knowledge index pending"}
+              </SheetDescription>
             </div>
             <SheetClose onClick={() => onOpenChange(false)} />
           </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-sm border border-zinc-800 bg-zinc-900/60 p-3">
+              <Files className="mb-2 h-4 w-4 text-emerald-400" />
+              <p className="text-lg font-bold text-white">{knowledgeStats.fileCount}</p>
+              <p className="text-xs font-medium text-zinc-500">files</p>
+            </div>
+            <div className="rounded-sm border border-zinc-800 bg-zinc-900/60 p-3">
+              <Layers3 className="mb-2 h-4 w-4 text-emerald-400" />
+              <p className="text-lg font-bold text-white">{knowledgeStats.areas.length}</p>
+              <p className="text-xs font-medium text-zinc-500">areas</p>
+            </div>
+            <div className="rounded-sm border border-zinc-800 bg-zinc-900/60 p-3">
+              <BookOpenText className="mb-2 h-4 w-4 text-emerald-400" />
+              <p className="text-lg font-bold text-white">{knowledgeStats.chunkCount}</p>
+              <p className="text-xs font-medium text-zinc-500">chunks</p>
+            </div>
+          </div>
+          {knowledgeStats.areas.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {knowledgeStats.areas.map((area) => (
+                <span
+                  key={area}
+                  className="inline-flex h-7 items-center rounded-sm border border-zinc-800 bg-zinc-900 px-2.5 text-xs font-bold text-zinc-300"
+                >
+                  {area}
+                </span>
+              ))}
+            </div>
+          )}
           <div className="grid gap-3 sm:grid-cols-2">
             <QuotaMeter
               label="This minute"
@@ -373,8 +412,25 @@ export function ProjectDocsChatSheet({
             {messages.length === 0 ? (
               <div className="rounded-sm border border-zinc-800 bg-zinc-900/40 p-4">
                 <p className="text-sm font-medium leading-6 text-zinc-300">
-                  Pick a starting point or ask directly.
+                  Ask about setup, architecture, contribution flow, config, workflows, and open issues from the indexed repo files.
                 </p>
+                {knowledgeStats.files.length > 0 && (
+                  <div className="mt-4 border-t border-zinc-800 pt-4">
+                    <p className="mb-2 text-xs font-bold uppercase tracking-widest text-zinc-500">
+                      Indexed examples
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {knowledgeStats.files.slice(0, 5).map((file) => (
+                        <span
+                          key={file}
+                          className="rounded-sm border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs font-medium text-zinc-300"
+                        >
+                          {file}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="mt-4 flex flex-wrap gap-2">
                   {SUGGESTED_QUESTIONS.map((suggestion) => (
                     <Button
@@ -409,7 +465,7 @@ export function ProjectDocsChatSheet({
                     ) : (
                       <div className="flex items-center gap-2 text-zinc-400">
                         <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-                        Reading project docs...
+                        Reading repo knowledge...
                       </div>
                     )}
                   </div>
@@ -433,7 +489,7 @@ export function ProjectDocsChatSheet({
                   !rateLimit
                     ? "Checking message limit..."
                     : quotaRemaining
-                      ? "Ask a question about this project..."
+                      ? "Ask about this repo..."
                       : "Message limit reached"
                 }
                 disabled={isAsking || !quotaRemaining}
@@ -443,7 +499,7 @@ export function ProjectDocsChatSheet({
                 type="submit"
                 size="icon"
                 disabled={isAsking || !quotaRemaining || question.trim().length === 0}
-                aria-label="Ask project docs"
+                aria-label="Ask repo knowledge"
                 title="Ask"
                 className="h-11 w-11 shrink-0"
               >

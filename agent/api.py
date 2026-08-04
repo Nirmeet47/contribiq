@@ -49,6 +49,12 @@ class ContributionProcessRequest(BaseModel):
     contributionId: str | None = None
 
 
+def verify_service_token(token: str | None) -> None:
+    expected = os.environ.get("CONTRIBIQ_SERVICE_TOKEN")
+    if expected and token != expected:
+        raise HTTPException(status_code=401, detail="Invalid service token")
+
+
 def get_redis_client() -> redis.Redis | None:
     global _redis_client
 
@@ -120,8 +126,10 @@ def ask_repo(
     payload: ProjectAskRequest,
     request: Request,
     x_contribiq_user_id: str | None = Header(default=None),
+    x_contribiq_service_token: str | None = Header(default=None),
 ) -> StreamingResponse:
     try:
+        verify_service_token(x_contribiq_service_token)
         identity = x_contribiq_user_id or f"ip:{request.client.host if request.client else 'unknown'}"
         check_ask_rate_limit(identity)
 
@@ -147,24 +155,36 @@ def ask_repo(
 
 
 @app.post("/matches/score")
-def score_matches_endpoint(payload: MatchScoreRequest) -> dict:
+def score_matches_endpoint(
+    payload: MatchScoreRequest,
+    x_contribiq_service_token: str | None = Header(default=None),
+) -> dict:
     try:
+        verify_service_token(x_contribiq_service_token)
         return score_matches(issue_id=payload.issueId, user_id=payload.userId)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/skills/refresh-embedding")
-def refresh_skill_embedding_endpoint(payload: SkillEmbeddingRefreshRequest) -> dict:
+def refresh_skill_embedding_endpoint(
+    payload: SkillEmbeddingRefreshRequest,
+    x_contribiq_service_token: str | None = Header(default=None),
+) -> dict:
     try:
+        verify_service_token(x_contribiq_service_token)
         return refresh_skill_embedding(payload.userId)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/contributions/process")
-def process_contribution_endpoint(payload: ContributionProcessRequest) -> dict:
+def process_contribution_endpoint(
+    payload: ContributionProcessRequest,
+    x_contribiq_service_token: str | None = Header(default=None),
+) -> dict:
     try:
+        verify_service_token(x_contribiq_service_token)
         if payload.contributionId:
             return process_contribution(payload.contributionId)
         return process_pending_contributions()
