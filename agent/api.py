@@ -1,5 +1,6 @@
 import logging
 import os
+import json
 
 import redis
 from dotenv import load_dotenv
@@ -11,6 +12,7 @@ from agent.contribution_summary import process_contribution, process_pending_con
 from agent.match_scoring import score_matches
 from agent.rag_service import stream_project_answer
 from agent.skill_embedding import refresh_skill_embedding
+from agent.skill_profiler import run_skill_profiler
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
@@ -47,6 +49,11 @@ class SkillEmbeddingRefreshRequest(BaseModel):
 
 class ContributionProcessRequest(BaseModel):
     contributionId: str | None = None
+
+
+class ProfileRequest(BaseModel):
+    user_id: str
+    github_token: str
 
 
 def verify_service_token(token: str | None) -> None:
@@ -118,6 +125,26 @@ def check_ask_rate_limit(identity: str) -> None:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/agent/profile")
+async def profile_user(req: ProfileRequest) -> StreamingResponse:
+    async def event_stream():
+        try:
+            async for event in run_skill_profiler(req.user_id, req.github_token):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as exc:
+            log.exception("Profile pipeline failed")
+            yield f"data: {json.dumps({'step': 'error', 'message': str(exc)})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.post("/projects/{repo_id}/ask")
