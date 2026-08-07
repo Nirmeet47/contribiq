@@ -1,7 +1,6 @@
-import { getRedis } from "@/lib/redis";
-
 export async function invalidateContributionStats(userId: string) {
   try {
+    const { getRedis } = await import("@/lib/redis");
     const profileKeys = await getRedis().keys("profile:*");
     await getRedis().del(`contributions:stats:${userId}`, ...profileKeys);
   } catch (error) {

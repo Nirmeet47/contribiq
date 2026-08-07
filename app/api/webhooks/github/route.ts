@@ -3,7 +3,6 @@ import { processContributionWithAi } from "@/lib/contribution-ai";
 import { invalidateContributionStats } from "@/lib/contribution-cache";
 import { invalidateAllFeedCaches } from "@/lib/feed-cache";
 import { prisma } from "@/lib/prisma";
-import { getRedis } from "@/lib/redis";
 import { isValidSignature } from "@/lib/webhook-signature";
 
 export const runtime = "nodejs";
@@ -108,6 +107,7 @@ async function syncIssueState(payload: GitHubWebhookPayload) {
   });
 
   try {
+    const { getRedis } = await import("@/lib/redis");
     await getRedis().del(`issue:${existingIssue.id}`);
     await getRedis().del(`project:${repo.id}`);
     await invalidateAllFeedCaches(`github-issue-${payload.action}`);

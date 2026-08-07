@@ -3,7 +3,6 @@ import { PROJECT_CACHE_TTL_SECONDS } from "@/lib/cache-constants";
 import { getAppGitHubToken } from "@/lib/github-token";
 import { prisma } from "@/lib/prisma";
 import { getIssueTypeBreakdown } from "@/lib/project-intelligence";
-import { getRedis } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 
@@ -292,6 +291,7 @@ export async function GET(
 ) {
   const { projectId } = await params;
   const cacheKey = `project:${projectId}:v4`;
+  const { getRedis } = await import("@/lib/redis");
   const cached = await getRedis().get(cacheKey);
 
   if (cached) {
