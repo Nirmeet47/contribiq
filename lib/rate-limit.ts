@@ -28,12 +28,12 @@ export async function checkRateLimit({
   const redisKey = buildRateLimitKey(key);
 
   try {
-    const { redis } = await import("@/lib/redis");
-    const count = await redis.incr(redisKey);
+    const { getRedis } = await import("@/lib/redis");
+    const count = await getRedis().incr(redisKey);
     if (count === 1) {
-      await redis.expire(redisKey, windowSeconds);
+      await getRedis().expire(redisKey, windowSeconds);
     }
-    const retryAfterSeconds = normalizeTtl(await redis.ttl(redisKey), windowSeconds);
+    const retryAfterSeconds = normalizeTtl(await getRedis().ttl(redisKey), windowSeconds);
 
     return {
       allowed: count <= limit,
@@ -62,9 +62,9 @@ export async function getRateLimitStatus({
   const redisKey = buildRateLimitKey(key);
 
   try {
-    const { redis } = await import("@/lib/redis");
-    const rawCount = await redis.get(redisKey);
-    const retryAfterSeconds = normalizeTtl(await redis.ttl(redisKey), windowSeconds);
+    const { getRedis } = await import("@/lib/redis");
+    const rawCount = await getRedis().get(redisKey);
+    const retryAfterSeconds = normalizeTtl(await getRedis().ttl(redisKey), windowSeconds);
     const count = rawCount ? Number.parseInt(rawCount, 10) : 0;
     const safeCount = Number.isFinite(count) ? count : 0;
 

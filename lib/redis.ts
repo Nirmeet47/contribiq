@@ -1,5 +1,3 @@
-// shared redis connection used by cache helpers
-
 import Redis from "ioredis";
 
 const globalForRedis = globalThis as unknown as {
@@ -25,8 +23,10 @@ function createRedisClient(): Redis {
   return client;
 }
 
-export const redis = globalForRedis.redis ?? createRedisClient();
+export function getRedis(): Redis {
+  if (!globalForRedis.redis) {
+    globalForRedis.redis = createRedisClient();
+  }
 
-if (process.env.NODE_ENV !== "production") {
-  globalForRedis.redis = redis;
+  return globalForRedis.redis;
 }

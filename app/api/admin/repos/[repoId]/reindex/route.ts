@@ -37,8 +37,8 @@ export async function POST(
   });
 
   try {
-    const { redis } = await import("@/lib/redis");
-    await redis.sadd("repo_docs_ingestion:pending", repo.id);
+    const { getRedis } = await import("@/lib/redis");
+    await getRedis().sadd("repo_docs_ingestion:pending", repo.id);
   } catch (error) {
     console.warn("[admin/reindex] Failed to mirror pending repo in Redis", {
       repoId: repo.id,
