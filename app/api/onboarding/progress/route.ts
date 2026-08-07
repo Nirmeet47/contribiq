@@ -2,7 +2,6 @@
 // it just forwards the request to the python fastapi agent backend
 // and pipes the SSE events straight through to the browser
 //
-// the agent backend runs at http://localhost:8000 and does the heavy lifting:
 // github fetch → groq analysis → postgres write → gemini embedding
 
 import { NextResponse } from "next/server";
@@ -18,8 +17,9 @@ const ONBOARDING_RATE_LIMIT = {
   windowSeconds: 5 * 60,
 };
 
-// where the fastapi agent lives
-const AGENT_URL = process.env.AGENT_URL || "http://localhost:8000";
+function getAiApiBaseUrl() {
+  return process.env.AI_API_BASE_URL ?? "http://127.0.0.1:8001";
+}
 
 export async function GET() {
   // check auth before we do anything
@@ -94,7 +94,7 @@ export async function GET() {
 
   // call the fastapi agent and pipe its SSE stream straight to the browser
   try {
-    const agentResponse = await fetch(`${AGENT_URL}/agent/profile`, {
+    const agentResponse = await fetch(`${getAiApiBaseUrl()}/agent/profile`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -125,7 +125,7 @@ export async function GET() {
         console.error("[onboarding/progress]", errorMessage);
 
         const msg = errorMessage.includes("ECONNREFUSED") || errorMessage.includes("fetch failed")
-          ? "Agent backend is not running. Start it with: uvicorn agent.main:app --reload --port 8000"
+          ? "AI API is not running. Start it with: npm run ai:api"
           : errorMessage;
 
         controller.enqueue(

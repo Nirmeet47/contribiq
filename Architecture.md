@@ -115,8 +115,7 @@ The Python code lives in `agent/`.
 
 Important entry points:
 
-- `agent/main.py`: onboarding/profile FastAPI service, usually on port `8000`.
-- `agent/api.py`: AI utility FastAPI service, usually on port `8001`.
+- `agent/api.py`: FastAPI service for onboarding/profile SSE, project Q&A, and on-demand AI utilities, usually on port `8001`.
 - `agent/scheduler.py`: long-running periodic worker.
 
 Pipeline modules:
@@ -137,14 +136,12 @@ Default local ports:
 
 ```text
 3000  Next.js app
-8000  agent/main.py onboarding SSE API
-8001  agent/api.py project Q&A and utility AI API
+8001  agent/api.py AI API
 ```
 
 Relevant environment variables:
 
 ```text
-AGENT_URL=http://localhost:8000
 AI_API_BASE_URL=http://127.0.0.1:8001
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
@@ -264,7 +261,7 @@ python scripts/run_pipeline.py
 GitHub OAuth via Supabase
   -> local users row
   -> /api/onboarding/progress
-  -> agent/main.py /agent/profile
+  -> agent/api.py /agent/profile
   -> skill_profiler reads GitHub activity
   -> skills and skill_profiles are written
   -> skill_embedding writes pgvector row
@@ -355,7 +352,6 @@ Development:
 
 ```bash
 npm run dev
-uvicorn agent.main:app --reload --port 8000
 npm run ai:api
 ```
 
@@ -376,8 +372,7 @@ python scripts/run_pipeline.py
 Production:
 
 - Run Next.js as the web app.
-- Run `agent/main.py` for onboarding/profile generation.
-- Run `agent/api.py` for project Q&A and AI utility endpoints.
+- Run `agent/api.py` for onboarding/profile generation, project Q&A, and AI utility endpoints.
 - Run `agent/scheduler.py` as a worker.
 - Keep Redis, Postgres, Supabase, GitHub, Groq, and Gemini credentials available to the relevant process.
 
@@ -387,7 +382,7 @@ Production:
 - No classified issues: run `npm run issues:fetch`, then `npm run issues:classify`.
 - Project Q&A has no context: run `npm run repo:docs`.
 - GitHub webhook ignored: verify webhook secret and event type.
-- Agent connection errors: check `AGENT_URL`, `AI_API_BASE_URL`, and the Python service ports.
+- Agent connection errors: check `AI_API_BASE_URL` and the Python service port.
 - Vector SQL errors: confirm pgvector extension and migrations were applied.
 - Env problems: visit `/env-check` for concrete missing or invalid values.
 

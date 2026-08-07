@@ -3,7 +3,7 @@ import { processContributionWithAi } from "@/lib/contribution-ai";
 import { invalidateContributionStats } from "@/lib/contribution-cache";
 import { invalidateAllFeedCaches } from "@/lib/feed-cache";
 import { prisma } from "@/lib/prisma";
-import { redis } from "@/lib/redis";
+import { getRedis } from "@/lib/redis";
 import { isValidSignature } from "@/lib/webhook-signature";
 
 export const runtime = "nodejs";
@@ -108,8 +108,8 @@ async function syncIssueState(payload: GitHubWebhookPayload) {
   });
 
   try {
-    await redis.del(`issue:${existingIssue.id}`);
-    await redis.del(`project:${repo.id}`);
+    await getRedis().del(`issue:${existingIssue.id}`);
+    await getRedis().del(`project:${repo.id}`);
     await invalidateAllFeedCaches(`github-issue-${payload.action}`);
   } catch (error) {
     console.error("[webhook] Failed to invalidate issue/feed caches", {

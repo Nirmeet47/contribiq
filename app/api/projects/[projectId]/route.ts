@@ -3,7 +3,7 @@ import { PROJECT_CACHE_TTL_SECONDS } from "@/lib/cache-constants";
 import { getAppGitHubToken } from "@/lib/github-token";
 import { prisma } from "@/lib/prisma";
 import { getIssueTypeBreakdown } from "@/lib/project-intelligence";
-import { redis } from "@/lib/redis";
+import { getRedis } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 
@@ -292,7 +292,7 @@ export async function GET(
 ) {
   const { projectId } = await params;
   const cacheKey = `project:${projectId}:v4`;
-  const cached = await redis.get(cacheKey);
+  const cached = await getRedis().get(cacheKey);
 
   if (cached) {
     const cachedPayload = JSON.parse(cached);
@@ -366,7 +366,7 @@ export async function GET(
     openIssues,
   };
 
-  await redis.set(cacheKey, JSON.stringify(payload), "EX", PROJECT_CACHE_TTL_SECONDS);
+  await getRedis().set(cacheKey, JSON.stringify(payload), "EX", PROJECT_CACHE_TTL_SECONDS);
 
   return NextResponse.json(payload);
 }

@@ -1,8 +1,8 @@
 # ContribIQ
 
-ContribIQ is an AI-assisted open-source contribution platform. It profiles a developer's GitHub skills, discovers active open-source repositories, classifies good contribution issues, and builds a personalized issue feed ranked by skill fit, interest fit, difficulty, and time commitment.
+ContribIQ helps developers find open-source issues that actually match their skills, interests, and available time. After a user signs in with GitHub, the platform analyzes their public coding activity, builds a skill profile, compares that profile with classified GitHub issues, and recommends contribution opportunities with clear match scores.
 
-The app combines a Next.js dashboard with a Python AI worker/API, Supabase authentication, Postgres with pgvector, Redis caching, GitHub webhooks, Groq chat models, and Gemini embeddings.
+The system is built as a full-stack AI product: a Next.js dashboard for the user experience, Python services for GitHub analysis and AI pipelines, Supabase for authentication, PostgreSQL with pgvector for relational and vector data, Redis for caching, GitHub webhooks for contribution tracking, Groq for classification and summaries, and Gemini for embeddings.
 
 ## What It Does
 
@@ -79,7 +79,6 @@ REDIS_URL=
 GROQ_API_KEY=
 GEMINI_API_KEY=
 NEXT_PUBLIC_APP_URL=http://localhost:3000
-AGENT_URL=http://localhost:8000
 AI_API_BASE_URL=http://127.0.0.1:8001
 ```
 
@@ -88,8 +87,7 @@ Notes:
 - `GITHUB_TOKEN` or `GITHUB_PAT` is used for app-level GitHub API calls.
 - `GITHUB_TOKEN_ENCRYPTION_KEY` or `TOKEN_ENCRYPTION_KEY` protects stored user GitHub tokens.
 - `CONTRIBIQ_SERVICE_TOKEN` optionally protects calls from Next.js to the internal Python AI API. Set the same value for both runtimes.
-- `AGENT_URL` points to the onboarding/profiling SSE service in `agent/main.py`.
-- `AI_API_BASE_URL` points to the project Q&A and on-demand AI endpoint in `agent/api.py`.
+- `AI_API_BASE_URL` points to the Python AI API in `agent/api.py`.
 - `/env-check` and `/api/env-check` validate the most important services and keys.
 
 ## Installation
@@ -128,13 +126,7 @@ Start the Next.js app:
 npm run dev
 ```
 
-Start the onboarding/profiling agent API:
-
-```bash
-uvicorn agent.main:app --reload --port 8000
-```
-
-Start the project AI API:
+Start the Python AI API:
 
 ```bash
 npm run ai:api
@@ -177,7 +169,7 @@ python scripts/check_db.py     # Print database health counts and samples
 
 1. A user signs in with GitHub through Supabase.
 2. The app creates or updates the local `users` row.
-3. The onboarding progress route streams events from `agent/main.py`.
+3. The onboarding progress route streams events from `agent/api.py`.
 4. The Python profiler fetches GitHub data, creates skills, and refreshes the user skill embedding.
 5. The user becomes eligible for personalized issue matches.
 
@@ -212,15 +204,24 @@ The Prisma schema is split across `prisma/schema/*.prisma`. Prisma config lives 
 
 Vector columns use `Unsupported("vector(768)")`, so reads and writes involving embeddings use raw SQL through Prisma or Python database clients. Normal relational data uses Prisma models.
 
-Important tables:
+### What Is Stored In Each Table
 
-- `users`: app users mapped to GitHub identities.
-- `skill_profiles`, `skills`, `skill_embeddings`: developer skill analysis.
-- `repos`, `repo_docs`: project catalog and embedded documentation.
-- `issues`, `issue_embeddings`: GitHub issue data and issue vectors.
-- `issue_matches`: personalized ranking output.
-- `bookmarks`, `working_on`, `issue_feedback`: user feed state.
-- `contributions`: merged PR contribution history.
+| Table | Basic data stored | Used for |
+| --- | --- | --- |
+| `users` | GitHub identity, username, display profile, encrypted GitHub token, selected interests, weekly time commitment, role, onboarding flags | Authentication mapping, onboarding state, personalized matching |
+| `skill_profiles` | One aggregate skill profile per user, including total commits, repositories, merged PR counts, and last update time | Profile overview and matching context |
+| `skills` | Individual skills for a profile, including name, level, confidence, language flag, repo count, and commit count | Skill radar, profile review, match explanations |
+| `skill_embeddings` | 768-dimensional vector representation of a user's skill profile | Similarity scoring against issue embeddings |
+| `skill_snapshots` | JSON snapshots of a user's skill profile over time | Skill history and timeline views |
+| `repos` | Discovered repository metadata, owner/name, description, categories, stars, language, maintainer score, activity score, and indexing status | Project catalog, issue ingestion, interest matching |
+| `repo_docs` | Embedded documentation chunks from repository files, including file path, chunk text, content hash, and vector embedding | Project Q&A and retrieval-augmented answers |
+| `issues` | GitHub issue title/body, labels, state, assignee/comment counts, URL, classification status, AI summary, difficulty, estimated hours, required skills, and issue type | Issue detail pages, feed cards, discovery, matching inputs |
+| `issue_embeddings` | 768-dimensional vector representation of an issue's skill requirements and context | Similarity scoring against user skill embeddings |
+| `issue_matches` | One user-issue match row with final score, skill similarity, language penalty, interest similarity, and difficulty score | Ranked personalized feed |
+| `bookmarks` | Issues saved by a user | Saved issue list and quick return workflow |
+| `working_on` | Issues a user has marked as actively working on | Working-on dashboard and feed filtering |
+| `issue_feedback` | User feedback such as `not_interested` for an issue | Hiding dismissed issues from future recommendations |
+| `contributions` | Merged PR webhook records, PR metadata, processing status, AI contribution summary, demonstrated skills, complexity, and diff stats | Contribution history, profile updates, activity analytics |
 
 ## Caching
 

@@ -3,7 +3,7 @@ import { getCurrentDbUserId } from "@/lib/auth-user";
 import { ISSUE_CACHE_TTL_SECONDS } from "@/lib/cache-constants";
 import { getAppGitHubToken } from "@/lib/github-token";
 import { prisma } from "@/lib/prisma";
-import { redis } from "@/lib/redis";
+import { getRedis } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 
@@ -183,7 +183,7 @@ export async function GET(
   const similarPage = parsePositiveInt(searchParams.get("similarPage"), 1, 100);
   const similarPageSize = parsePositiveInt(searchParams.get("similarPageSize"), 5, 10);
   const issueCacheKey = `issue:v4:${issueId}:similar:${similarPage}:${similarPageSize}`;
-  const cachedIssue = await redis.get(issueCacheKey);
+  const cachedIssue = await getRedis().get(issueCacheKey);
   let publicPayload: PublicIssuePayload | null = cachedIssue
     ? JSON.parse(cachedIssue)
     : null;
@@ -211,7 +211,7 @@ export async function GET(
         hasNextPage: similarIssueRows.length > similarPageSize,
       },
     };
-    await redis.set(issueCacheKey, JSON.stringify(publicPayload), "EX", ISSUE_CACHE_TTL_SECONDS);
+    await getRedis().set(issueCacheKey, JSON.stringify(publicPayload), "EX", ISSUE_CACHE_TTL_SECONDS);
   }
 
   const userState = await getUserIssueState(userId, issueId);

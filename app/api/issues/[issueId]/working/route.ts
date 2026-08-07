@@ -7,8 +7,8 @@ export const dynamic = "force-dynamic";
 
 async function deleteIssueCache(issueId: string) {
   try {
-    const { redis } = await import("@/lib/redis");
-    await redis.del(`issue:${issueId}`);
+    const { getRedis } = await import("@/lib/redis");
+    await getRedis().del(`issue:${issueId}`);
   } catch (error) {
     console.error("[working] Failed to delete issue cache", { issueId, error });
   }

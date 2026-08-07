@@ -1,9 +1,10 @@
-import { redis } from "@/lib/redis";
+import { getRedis } from "@/lib/redis";
 
 export const FEED_CACHE_VERSION = "v6";
 export const FEED_CACHE_TTL_SECONDS = 300;
 
 async function keysByPattern(pattern: string) {
+  const redis = getRedis();
   const keys: string[] = [];
   let cursor = "0";
 
@@ -17,6 +18,7 @@ async function keysByPattern(pattern: string) {
 }
 
 async function deleteKeys(keys: string[]) {
+  const redis = getRedis();
   for (let index = 0; index < keys.length; index += 100) {
     const batch = keys.slice(index, index + 100);
     if (batch.length > 0) {

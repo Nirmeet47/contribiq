@@ -79,9 +79,9 @@ type GitHubIssueResponse = {
 
 async function deleteIssueCaches(issueId: string, repoId: string) {
   try {
-    const { redis } = await import("@/lib/redis");
-    await redis.del(`issue:${issueId}`);
-    await redis.del(`project:${repoId}`);
+    const { getRedis } = await import("@/lib/redis");
+    await getRedis().del(`issue:${issueId}`);
+    await getRedis().del(`project:${repoId}`);
   } catch (error) {
     console.error("[feed] Failed to invalidate validated issue caches", {
       issueId,
