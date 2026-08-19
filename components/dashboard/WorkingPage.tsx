@@ -24,6 +24,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { apiJson } from "@/lib/api-client";
+import { MarkAsDoneButton } from "@/components/dashboard/MarkAsDoneButton";
 
 type WorkingIssue = {
   id: string;
@@ -250,6 +251,7 @@ export function WorkingPage() {
                   >
                     <ExternalLink className="h-4 w-4" />
                   </a>
+                  <MarkAsDoneButton issueId={item.issue.id} />
                   <Button
                     type="button"
                     variant="outline"

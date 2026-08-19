@@ -14,6 +14,7 @@ import {
 import { CheckCircle2, Clock, ExternalLink, GitPullRequest, X } from "lucide-react";
 import Link from "next/link";
 import { apiGet, apiJson } from "@/lib/api-client";
+import { MarkAsDoneButton } from "@/components/dashboard/MarkAsDoneButton";
 
 type WorkingIssue = {
   id: string;
@@ -156,6 +157,7 @@ export function WorkingIssues() {
                 >
                   <ExternalLink className="h-4 w-4" />
                 </a>
+                <MarkAsDoneButton issueId={item.issue.id} />
                 <Button
                   type="button"
                   variant="outline"

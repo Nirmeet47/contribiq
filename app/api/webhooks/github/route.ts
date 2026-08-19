@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { processContributionWithAi } from "@/lib/contribution-ai";
-import { invalidateContributionStats } from "@/lib/contribution-cache";
+import { recordMergedContribution } from "@/lib/contributions";
 import { invalidateAllFeedCaches } from "@/lib/feed-cache";
 import { prisma } from "@/lib/prisma";
 import { isValidSignature } from "@/lib/webhook-signature";
@@ -182,40 +181,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const contribution = await prisma.contribution.upsert({
-    where: {
-      userId_repoOwner_repoName_prNumber: {
-        userId: user.id,
-        repoOwner,
-        repoName,
-        prNumber,
-      },
-    },
-    update: {
-      prTitle,
-      prUrl,
-      mergedAt,
-      processed: false,
-    },
-    create: {
-      userId: user.id,
-      repoOwner,
-      repoName,
-      prNumber,
-      prTitle,
-      prUrl,
-      mergedAt,
-      processed: false,
-    },
-  });
-
-  await invalidateContributionStats(user.id);
-
-  processContributionWithAi(contribution.id).catch((error) => {
-    console.error("[webhook] Failed to trigger Python contribution processing", {
-      contributionId: contribution.id,
-      error,
-    });
+  await recordMergedContribution({
+    userId: user.id,
+    repoOwner,
+    repoName,
+    prNumber,
+    prTitle,
+    prUrl,
+    mergedAt,
+    logContext: "webhook",
   });
 
   return NextResponse.json({ ok: true });
