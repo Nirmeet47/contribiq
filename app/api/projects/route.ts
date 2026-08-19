@@ -26,7 +26,7 @@ type ProjectListRepo = {
 };
 
 type IssueCountRow = {
-  repoId: string;
+  projectId: string;
   _count: number;
 };
 
@@ -113,7 +113,7 @@ export async function GET(request: Request) {
       : {}),
   };
 
-  const total = await prisma.repo.count({ where });
+  const total = await prisma.project.count({ where });
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.min(page, totalPages);
   const start = (currentPage - 1) * pageSize;
@@ -127,7 +127,7 @@ export async function GET(request: Request) {
           ? { maintainerScore: "desc" as const }
           : { activityScore: "desc" as const };
 
-  const repos: ProjectListRepo[] = await prisma.repo.findMany({
+  const repos: ProjectListRepo[] = await prisma.project.findMany({
     where,
     orderBy: canSortInDatabase ? orderBy : undefined,
     select: {
@@ -151,27 +151,27 @@ export async function GET(request: Request) {
   const repoIds = repos.map((repo: ProjectListRepo) => repo.id);
   const [openIssueCounts, classifiedIssueCounts, languages, categoryRows] = await Promise.all([
     prisma.issue.groupBy({
-      by: ["repoId"],
-      where: { repoId: { in: repoIds }, state: "open" },
+      by: ["projectId"],
+      where: { projectId: { in: repoIds }, state: "open" },
       _count: true,
     }),
     prisma.issue.groupBy({
-      by: ["repoId"],
-      where: { repoId: { in: repoIds }, state: "open", classified: true },
+      by: ["projectId"],
+      where: { projectId: { in: repoIds }, state: "open", classified: true },
       _count: true,
     }),
     getRepoLanguageCatalog(),
-    prisma.repo.findMany({
+    prisma.project.findMany({
       select: { categories: true },
     }),
   ]);
 
   const openCountByRepo = new Map(
-    (openIssueCounts as IssueCountRow[]).map((item: IssueCountRow) => [item.repoId, item._count])
+    (openIssueCounts as IssueCountRow[]).map((item: IssueCountRow) => [item.projectId, item._count])
   );
   const classifiedCountByRepo = new Map(
     (classifiedIssueCounts as IssueCountRow[]).map((item: IssueCountRow) => [
-      item.repoId,
+      item.projectId,
       item._count,
     ])
   );

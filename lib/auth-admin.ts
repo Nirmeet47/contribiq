@@ -3,7 +3,7 @@ import { getCurrentAuthUser, getCurrentDbUser } from "@/lib/auth-user";
 
 export async function getCurrentAdminUserId() {
   const user = await getCurrentDbUser({ id: true, role: true });
-  if (!user || user.role !== "ADMIN") return null;
+  if (!user || user.role !== "admin") return null;
   return user.id;
 }
 

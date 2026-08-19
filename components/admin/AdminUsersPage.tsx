@@ -20,13 +20,13 @@ type UserRow = {
   createdAt: string;
   onboarded: boolean;
   profileAnalyzed: boolean;
-  role: "USER" | "ADMIN";
+  role: "user" | "admin";
   bookmarks: number;
   workingOn: number;
   contributions: number;
 };
 
-type UserFilter = "ALL" | "ADMIN" | "USER";
+type UserFilter = "ALL" | "admin" | "user";
 
 type UsersResponse = {
   counts: Record<UserFilter, number>;
@@ -36,8 +36,8 @@ type UsersResponse = {
 
 const FILTERS: Array<{ value: UserFilter; label: string; dot?: string }> = [
   { value: "ALL", label: "All" },
-  { value: "ADMIN", label: "Admins", dot: "bg-emerald-400" },
-  { value: "USER", label: "Users", dot: "bg-zinc-500" },
+  { value: "admin", label: "Admins", dot: "bg-emerald-400" },
+  { value: "user", label: "Users", dot: "bg-zinc-500" },
 ];
 
 async function fetchUsers(page: number, filter: UserFilter, search: string) {
@@ -147,7 +147,7 @@ export function AdminUsersPage() {
                     <td className="px-4 py-4"><BoolBadge value={user.onboarded} /></td>
                     <td className="px-4 py-4"><BoolBadge value={user.profileAnalyzed} /></td>
                     <td className="px-4 py-4">
-                      <Badge variant={user.role === "ADMIN" ? "success" : "secondary"}>{user.role}</Badge>
+                      <Badge variant={user.role === "admin" ? "success" : "secondary"}>{user.role}</Badge>
                     </td>
                     <td className="px-4 py-4 font-medium">{formatNumber(user.bookmarks)}</td>
                     <td className="px-4 py-4 font-medium">{formatNumber(user.workingOn)}</td>

@@ -79,7 +79,7 @@ async function fetchIssueComments(owner: string, repo: string, issueUrl: string)
 }
 
 async function getPublicIssue(issueId: string) {
-  return prisma.issue.findUnique({
+  const issue = await prisma.issue.findUnique({
     where: { id: issueId },
     select: {
       id: true,
@@ -97,7 +97,7 @@ async function getPublicIssue(issueId: string) {
       issueType: true,
       createdAt: true,
       updatedAt: true,
-      repo: {
+      project: {
         select: {
           id: true,
           owner: true,
@@ -110,10 +110,15 @@ async function getPublicIssue(issueId: string) {
       },
     },
   });
+
+  if (!issue) return null;
+
+  const { project, ...rest } = issue;
+  return { ...rest, repo: project };
 }
 
 async function getSimilarIssues(issueId: string, requiredSkills: string[], page: number, pageSize: number) {
-  return prisma.issue.findMany({
+  const issues = await prisma.issue.findMany({
     where: {
       id: { not: issueId },
       state: "open",
@@ -131,7 +136,7 @@ async function getSimilarIssues(issueId: string, requiredSkills: string[], page:
       issueType: true,
       githubUrl: true,
       requiredSkills: true,
-      repo: {
+      project: {
         select: {
           id: true,
           owner: true,
@@ -141,6 +146,8 @@ async function getSimilarIssues(issueId: string, requiredSkills: string[], page:
       },
     },
   });
+
+  return issues.map(({ project, ...rest }) => ({ ...rest, repo: project }));
 }
 
 async function getUserIssueState(userId: string, issueId: string) {

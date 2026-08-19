@@ -19,13 +19,13 @@ import {
 type IssueRow = {
   id: string;
   title: string;
-  repoId: string;
+  projectId: string;
   difficulty: string | null;
   issueType: string | null;
   aiSummary: string | null;
   classified: boolean;
   updatedAt: string;
-  repo: { fullName: string };
+  project: { fullName: string };
 };
 
 type ClassificationFilter = "ALL" | "CLASSIFIED" | "UNCLASSIFIED";
@@ -294,8 +294,8 @@ export function AdminIssuesPage() {
                       </div>
                     </td>
                     <td className="px-4 py-4 font-medium">
-                      <div className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-white" title={issue.repo.fullName}>
-                        {issue.repo.fullName}
+                      <div className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-white" title={issue.project.fullName}>
+                        {issue.project.fullName}
                       </div>
                     </td>
                     <td className="px-4 py-4">{issue.difficulty ? <Badge variant="secondary">{issue.difficulty}</Badge> : <span className="text-zinc-500">None</span>}</td>

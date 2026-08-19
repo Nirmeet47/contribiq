@@ -108,7 +108,7 @@ export async function GET() {
 
   const repos =
     fullNames.length > 0
-      ? await prisma.repo.findMany({
+      ? await prisma.project.findMany({
           where: {
             fullName: { in: fullNames },
           },

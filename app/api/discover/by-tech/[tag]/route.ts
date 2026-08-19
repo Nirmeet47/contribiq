@@ -100,7 +100,7 @@ export async function GET(
       : [];
   const repos =
     repoIds.length > 0
-      ? await prisma.repo.findMany({
+      ? await prisma.project.findMany({
           where: { id: { in: repoIds } },
           select: {
             id: true,

@@ -35,19 +35,19 @@ type ReposResponse = {
   pagination: { page: number; pageSize: number; total: number; hasNextPage: boolean };
 };
 
-const STATUS_FILTERS = ["ALL", "FAILED", "PENDING", "INDEXED", "NOT_INDEXED"] as const;
+const STATUS_FILTERS = ["ALL", "failed", "pending", "indexed", "not_indexed"] as const;
 const FILTER_META: Record<(typeof STATUS_FILTERS)[number], { label: string; dot: string; icon?: typeof Circle }> = {
   ALL: { label: "All", dot: "bg-blue-400" },
-  FAILED: { label: "Failed", dot: "bg-red-400", icon: XCircle },
-  PENDING: { label: "Pending", dot: "bg-yellow-300", icon: Clock3 },
-  INDEXED: { label: "Indexed", dot: "bg-emerald-400", icon: CheckCircle2 },
-  NOT_INDEXED: { label: "Not indexed", dot: "bg-zinc-500", icon: Circle },
+  failed: { label: "Failed", dot: "bg-red-400", icon: XCircle },
+  pending: { label: "Pending", dot: "bg-yellow-300", icon: Clock3 },
+  indexed: { label: "Indexed", dot: "bg-emerald-400", icon: CheckCircle2 },
+  not_indexed: { label: "Not indexed", dot: "bg-zinc-500", icon: Circle },
 };
 
 function indexingDetail(repo: RepoRow) {
-  if (repo.indexingStatus === "INDEXED") return `${formatNumber(repo.docChunks)} chunks`;
-  if (repo.indexingStatus === "PENDING") return "Queued for indexing";
-  if (repo.indexingStatus === "FAILED") return "Needs retry";
+  if (repo.indexingStatus === "indexed") return `${formatNumber(repo.docChunks)} chunks`;
+  if (repo.indexingStatus === "pending") return "Queued for indexing";
+  if (repo.indexingStatus === "failed") return "Needs retry";
   return null;
 }
 
@@ -130,11 +130,11 @@ export function AdminReposPage() {
         <Button
           type="button"
           className="h-11 w-full bg-emerald-500 text-zinc-950 hover:bg-emerald-400 lg:w-fit"
-          disabled={reindexAllMutation.isPending || (counts?.NOT_INDEXED ?? 0) === 0}
+          disabled={reindexAllMutation.isPending || (counts?.not_indexed ?? 0) === 0}
           onClick={() => reindexAllMutation.mutate()}
         >
           <RefreshCw className="h-4 w-4" />
-          Re-index all not-indexed ({formatNumber(counts?.NOT_INDEXED ?? 0)})
+          Re-index all not-indexed ({formatNumber(counts?.not_indexed ?? 0)})
         </Button>
       </div>
 
@@ -193,7 +193,7 @@ export function AdminReposPage() {
                     <tr key={repo.id} className="h-[66px] align-middle text-zinc-200 odd:bg-zinc-950 even:bg-zinc-900/70">
                       <td className="px-4 py-4 font-medium text-white">
                         <div className="truncate" title={repo.fullName}>{repo.fullName}</div>
-                        {repo.indexingStatus === "FAILED" && repo.indexingError ? (
+                        {repo.indexingStatus === "failed" && repo.indexingError ? (
                           <div className="mt-2 flex max-w-md items-start gap-1.5 text-xs font-medium leading-5 text-red-400" title={repo.indexingError}>
                             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                             <span className="line-clamp-2">{repo.indexingError}</span>
@@ -228,13 +228,13 @@ export function AdminReposPage() {
                           disabled={reindexMutation.isPending && reindexMutation.variables === repo.id}
                           onClick={() => reindexMutation.mutate(repo.id)}
                           className={`h-10 min-w-28 whitespace-nowrap ${
-                            repo.indexingStatus === "FAILED"
+                            repo.indexingStatus === "failed"
                               ? "border-red-500/40 text-red-400 hover:border-red-500/60 hover:text-red-300"
                               : ""
                           }`}
                         >
                           <RefreshCw className="h-4 w-4" />
-                          {repo.indexingStatus === "FAILED" ? "Retry" : "Re-index"}
+                          {repo.indexingStatus === "failed" ? "Retry" : "Re-index"}
                         </Button>
                       </td>
                     </tr>

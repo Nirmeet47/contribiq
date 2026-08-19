@@ -12,7 +12,7 @@ export async function POST(
   if (auth.error) return auth.error;
 
   const { repoId } = await params;
-  const repo = await prisma.repo.findUnique({
+  const repo = await prisma.project.findUnique({
     where: { id: repoId },
     select: { id: true },
   });
@@ -21,10 +21,10 @@ export async function POST(
     return NextResponse.json({ error: "Repo not found" }, { status: 404 });
   }
 
-  const updatedRepo = await prisma.repo.update({
+  const updatedRepo = await prisma.project.update({
     where: { id: repo.id },
     data: {
-      indexingStatus: "PENDING",
+      indexingStatus: "pending",
       indexingError: null,
     },
     select: {

@@ -1,7 +1,8 @@
 // hand-curated list of repos we pull issues from every 6 hours
 // categories is what we match against user interests to compute interestSim
+// @@map keeps the physical table named "repos" — only the Prisma-side name changed
 
-model Repo {
+model Project {
   id              String    @id @default(cuid())
   owner           String // "vercel"
   name            String // "next.js"
@@ -13,14 +14,14 @@ model Repo {
   maintainerScore Float     @default(0) // how responsive the maintainers are, 0–1
   activityScore   Float     @default(0) // recent commit/PR activity, 0–1
   lastFetchedAt   DateTime?
-  indexingStatus  IndexingStatus @default(NOT_INDEXED)
+  indexingStatus  IndexingStatus @default(not_indexed)
   lastIndexedAt   DateTime?
   indexingError   String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   issues Issue[]
-  docs   RepoDoc[]
+  docs   ProjectDoc[]
 
   @@index([indexingStatus])
   @@index([language])
@@ -33,9 +34,9 @@ model Repo {
 // Repository docs are embedded into pgvector chunks for project Q&A.
 // Prisma can create this table, but reads/writes involving embedding must use
 // prisma.$queryRaw / prisma.$executeRaw because pgvector is Unsupported.
-model RepoDoc {
+model ProjectDoc {
   id          String                    @id @default(cuid())
-  repoId      String
+  projectId   String                    @map("repoId")
   filePath    String
   contentHash String
   chunkIndex  Int
@@ -43,9 +44,9 @@ model RepoDoc {
   embedding   Unsupported("vector(768)")
   updatedAt   DateTime                  @default(now()) @updatedAt
 
-  repo Repo @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  @@unique([repoId, filePath, chunkIndex])
-  @@index([repoId, filePath])
+  @@unique([projectId, filePath, chunkIndex])
+  @@index([projectId, filePath])
   @@map("repo_docs")
 }

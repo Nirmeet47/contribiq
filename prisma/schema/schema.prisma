@@ -40,14 +40,16 @@ enum FeedbackType {
   not_interested
 }
 
+// @map on each value keeps the physical Postgres enum values unchanged (USER/ADMIN),
+// only the Prisma-side (and generated TS) casing is normalized to match the other enums
 enum Role {
-  USER
-  ADMIN
+  user  @map("USER")
+  admin @map("ADMIN")
 }
 
 enum IndexingStatus {
-  NOT_INDEXED
-  PENDING
-  INDEXED
-  FAILED
+  not_indexed @map("NOT_INDEXED")
+  pending     @map("PENDING")
+  indexed     @map("INDEXED")
+  failed      @map("FAILED")
 }

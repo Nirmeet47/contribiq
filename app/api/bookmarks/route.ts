@@ -23,7 +23,7 @@ type BookmarkListItem = {
     githubUrl: string;
     requiredSkills: string[];
     state: "open" | "closed";
-    repo: {
+    project: {
       id: string;
       owner: string;
       name: string;
@@ -75,7 +75,7 @@ export async function GET() {
             githubUrl: true,
             requiredSkills: true,
             state: true,
-            repo: {
+            project: {
               select: {
                 id: true,
                 owner: true,
@@ -113,7 +113,7 @@ export async function GET() {
         requiredSkills: bookmark.issue.requiredSkills,
         state: bookmark.issue.state,
         isWorking: bookmark.issue.workingOn.length > 0,
-        repo: bookmark.issue.repo,
+        repo: bookmark.issue.project,
       },
     })),
   });

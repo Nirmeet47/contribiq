@@ -5,7 +5,7 @@
 model Issue {
   id            String     @id @default(cuid())
   githubId      BigInt
-  repoId        String
+  projectId     String     @map("repoId")
   title         String
   body          String?    @db.Text
   labels        String[]
@@ -25,15 +25,15 @@ model Issue {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  repo           Repo            @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   matches        IssueMatch[]
   bookmarks      Bookmark[]
   feedback       IssueFeedback[]
   workingOn      WorkingOn[]
   issueEmbedding IssueEmbedding?
 
-  @@unique([githubId, repoId])
-  @@index([repoId, state, classified])
+  @@unique([githubId, projectId])
+  @@index([projectId, state, classified])
   @@index([state, difficulty, issueType])
   @@index([updatedAt])
   @@map("issues")

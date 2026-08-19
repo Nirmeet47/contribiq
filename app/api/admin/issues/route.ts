@@ -10,7 +10,7 @@ const issuesQuerySchema = adminPaginationSchema.extend({
   classified: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
   difficulty: z.enum(["beginner", "intermediate", "advanced"]).optional(),
   issueType: z.enum(["bug", "feature", "docs", "refactor"]).optional(),
-  repoId: z.string().min(1).optional(),
+  projectId: z.string().min(1).optional(),
   q: z.string().trim().max(120).optional(),
 });
 
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     classified: searchParams.get("classified") || undefined,
     difficulty: searchParams.get("difficulty") || undefined,
     issueType: searchParams.get("issueType") || undefined,
-    repoId: searchParams.get("repoId") || undefined,
+    projectId: searchParams.get("projectId") || undefined,
     q: searchParams.get("q") || undefined,
   });
 
@@ -33,13 +33,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: z.treeifyError(parsed.error) }, { status: 400 });
   }
 
-  const { page, pageSize, classified, difficulty, issueType, repoId, q } = parsed.data;
+  const { page, pageSize, classified, difficulty, issueType, projectId, q } = parsed.data;
   const searchWhere = q
     ? {
         OR: [
           { title: { contains: q, mode: "insensitive" as const } },
           { aiSummary: { contains: q, mode: "insensitive" as const } },
-          { repo: { fullName: { contains: q, mode: "insensitive" as const } } },
+          { project: { fullName: { contains: q, mode: "insensitive" as const } } },
         ],
       }
     : {};
@@ -47,7 +47,7 @@ export async function GET(request: Request) {
     ...searchWhere,
     ...(difficulty ? { difficulty } : {}),
     ...(issueType ? { issueType } : {}),
-    ...(repoId ? { repoId } : {}),
+    ...(projectId ? { projectId } : {}),
   };
   const where = {
     ...typedWhere,
@@ -65,13 +65,13 @@ export async function GET(request: Request) {
       select: {
         id: true,
         title: true,
-        repoId: true,
+        projectId: true,
         difficulty: true,
         issueType: true,
         aiSummary: true,
         classified: true,
         updatedAt: true,
-        repo: {
+        project: {
           select: {
             fullName: true,
           },

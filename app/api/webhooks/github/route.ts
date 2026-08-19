@@ -72,7 +72,7 @@ async function syncIssueState(payload: GitHubWebhookPayload) {
 
   if (!repoOwner || !repoName || (!githubIssueId && !issueNumber)) return;
 
-  const repo = await prisma.repo.findFirst({
+  const repo = await prisma.project.findFirst({
     where: { owner: repoOwner, name: repoName },
     select: { id: true },
   });
@@ -81,7 +81,7 @@ async function syncIssueState(payload: GitHubWebhookPayload) {
 
   const existingIssue = await prisma.issue.findFirst({
     where: {
-      repoId: repo.id,
+      projectId: repo.id,
       OR: [
         ...(githubIssueId ? [{ githubId: githubIssueId }] : []),
         ...(issueNumber ? [{ githubUrl: { endsWith: `/issues/${issueNumber}` } }] : []),

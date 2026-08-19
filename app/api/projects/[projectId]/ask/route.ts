@@ -220,7 +220,7 @@ export async function POST(
   }
 
   const { projectId } = await params;
-  const repo = await prisma.repo.findUnique({
+  const repo = await prisma.project.findUnique({
     where: { id: projectId },
     select: { id: true },
   });

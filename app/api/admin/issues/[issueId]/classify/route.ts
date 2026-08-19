@@ -97,7 +97,7 @@ export async function POST(
       aiSummary: true,
       classified: true,
       updatedAt: true,
-      repo: {
+      project: {
         select: {
           fullName: true,
         },

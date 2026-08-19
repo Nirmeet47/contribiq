@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 const usersQuerySchema = adminPaginationSchema.extend({
-  role: z.enum(["USER", "ADMIN"]).optional(),
+  role: z.enum(["user", "admin"]).optional(),
   q: z.string().trim().max(120).optional(),
 });
 
@@ -43,8 +43,8 @@ export async function GET(request: Request) {
   const [count, allCount, adminCount, userCount, users] = await Promise.all([
     prisma.user.count({ where }),
     prisma.user.count({ where: searchWhere }),
-    prisma.user.count({ where: { ...searchWhere, role: "ADMIN" } }),
-    prisma.user.count({ where: { ...searchWhere, role: "USER" } }),
+    prisma.user.count({ where: { ...searchWhere, role: "admin" } }),
+    prisma.user.count({ where: { ...searchWhere, role: "user" } }),
     prisma.user.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -71,8 +71,8 @@ export async function GET(request: Request) {
   return NextResponse.json({
     counts: {
       ALL: allCount,
-      ADMIN: adminCount,
-      USER: userCount,
+      admin: adminCount,
+      user: userCount,
     },
     users: users.map((user) => ({
       id: user.id,

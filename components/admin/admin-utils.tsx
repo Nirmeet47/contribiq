@@ -2,20 +2,20 @@ import { CheckCircle2, Clock3, CircleDashed, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-export type IndexingStatus = "NOT_INDEXED" | "PENDING" | "INDEXED" | "FAILED";
+export type IndexingStatus = "not_indexed" | "pending" | "indexed" | "failed";
 
 const statusClasses: Record<IndexingStatus, string> = {
-  INDEXED: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-  PENDING: "border-yellow-500/30 bg-yellow-500/10 text-yellow-300",
-  NOT_INDEXED: "border-zinc-700 bg-zinc-900 text-zinc-300",
-  FAILED: "border-red-500/40 bg-red-500/10 text-red-400",
+  indexed: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+  pending: "border-yellow-500/30 bg-yellow-500/10 text-yellow-300",
+  not_indexed: "border-zinc-700 bg-zinc-900 text-zinc-300",
+  failed: "border-red-500/40 bg-red-500/10 text-red-400",
 };
 
 const statusIcons = {
-  INDEXED: CheckCircle2,
-  PENDING: Clock3,
-  NOT_INDEXED: CircleDashed,
-  FAILED: XCircle,
+  indexed: CheckCircle2,
+  pending: Clock3,
+  not_indexed: CircleDashed,
+  failed: XCircle,
 };
 
 export function formatDate(value: string | null | undefined) {
@@ -41,7 +41,7 @@ export function StatusBadge({ status }: { status: IndexingStatus }) {
   return (
     <Badge className={cn("gap-1.5", statusClasses[status])}>
       <Icon className="h-3.5 w-3.5" />
-      {status.replace("_", " ")}
+      {status.toUpperCase().replace("_", " ")}
     </Badge>
   );
 }

@@ -42,10 +42,10 @@ async function fetchOverview() {
 }
 
 const STATUS_META: Record<IndexingStatus, { label: string; dot: string; bar: string }> = {
-  INDEXED: { label: "Indexed", dot: "bg-emerald-400", bar: "bg-emerald-500" },
-  PENDING: { label: "Pending", dot: "bg-yellow-300", bar: "bg-yellow-300" },
-  FAILED: { label: "Failed", dot: "bg-red-400", bar: "bg-red-400" },
-  NOT_INDEXED: { label: "Not indexed", dot: "bg-zinc-600", bar: "bg-zinc-700" },
+  indexed: { label: "Indexed", dot: "bg-emerald-400", bar: "bg-emerald-500" },
+  pending: { label: "Pending", dot: "bg-yellow-300", bar: "bg-yellow-300" },
+  failed: { label: "Failed", dot: "bg-red-400", bar: "bg-red-400" },
+  not_indexed: { label: "Not indexed", dot: "bg-zinc-600", bar: "bg-zinc-700" },
 };
 
 function ratio(value: number, total: number) {
@@ -125,16 +125,16 @@ export function AdminOverviewPage() {
     );
   }
 
-  const indexed = statusCount(overview, "INDEXED");
-  const pending = statusCount(overview, "PENDING");
-  const failed = statusCount(overview, "FAILED");
-  const notIndexed = statusCount(overview, "NOT_INDEXED");
+  const indexed = statusCount(overview, "indexed");
+  const pending = statusCount(overview, "pending");
+  const failed = statusCount(overview, "failed");
+  const notIndexed = statusCount(overview, "not_indexed");
   const unclassified = Math.max(overview.database.totalIssues - overview.database.classifiedIssues, 0);
   const indexingSegments: Array<{ status: IndexingStatus; count: number }> = [
-    { status: "INDEXED", count: indexed },
-    { status: "PENDING", count: pending },
-    { status: "FAILED", count: failed },
-    { status: "NOT_INDEXED", count: notIndexed },
+    { status: "indexed", count: indexed },
+    { status: "pending", count: pending },
+    { status: "failed", count: failed },
+    { status: "not_indexed", count: notIndexed },
   ];
 
   return (
@@ -147,7 +147,7 @@ export function AdminOverviewPage() {
           </p>
         </div>
         <Link
-          href="/admin/repos?status=NOT_INDEXED"
+          href="/admin/repos?status=not_indexed"
           className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-sm bg-emerald-500 px-4 text-sm font-bold text-zinc-950 transition-colors hover:bg-emerald-400"
         >
           <RefreshCw className="h-4 w-4" />
@@ -211,7 +211,7 @@ export function AdminOverviewPage() {
                 These repos will not support repo knowledge Q&A until the ingestion worker indexes them.
               </p>
               <Link
-                href="/admin/repos?status=NOT_INDEXED"
+                href="/admin/repos?status=not_indexed"
                 className="mt-4 inline-flex h-10 items-center justify-center rounded-sm bg-emerald-500 px-4 text-sm font-bold text-zinc-950 transition-colors hover:bg-emerald-400"
               >
                 View unindexed repos
@@ -231,7 +231,7 @@ export function AdminOverviewPage() {
               Review unclassified issues ({formatNumber(unclassified)})
             </Link>
             <Link
-              href="/admin/repos?status=FAILED"
+              href="/admin/repos?status=failed"
               className="flex h-11 items-center gap-3 rounded-sm border border-zinc-700 bg-zinc-950 px-4 text-sm font-bold text-zinc-200 transition-colors hover:border-zinc-600 hover:text-white"
             >
               <ServerCog className="h-4 w-4 text-zinc-400" />

@@ -11,7 +11,7 @@ export async function getRepoLanguageCatalog() {
   );
   if (cached) return cached;
 
-  const languages = await prisma.repo.findMany({
+  const languages = await prisma.project.findMany({
     where: { language: { not: null } },
     distinct: ["language"],
     orderBy: { language: "asc" },
@@ -19,7 +19,7 @@ export async function getRepoLanguageCatalog() {
   });
 
   const payload = languages
-    .map((repo) => repo.language)
+    .map((project) => project.language)
     .filter((value): value is string => Boolean(value));
 
   await setCachedJson(

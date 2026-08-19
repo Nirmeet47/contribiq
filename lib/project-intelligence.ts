@@ -7,7 +7,7 @@ export const ISSUE_TYPES: IssueType[] = ["bug", "feature", "docs", "refactor"];
 export async function getIssueTypeBreakdown(projectId: string) {
   const groupedIssues = await prisma.issue.groupBy({
     by: ["issueType"],
-    where: { repoId: projectId, state: "open", classified: true },
+    where: { projectId, state: "open", classified: true },
     _count: true,
   });
 
@@ -29,7 +29,7 @@ export async function getIssueTypeBreakdown(projectId: string) {
 }
 
 export async function getProjectStats(projectId: string) {
-  const repo = await prisma.repo.findUnique({
+  const repo = await prisma.project.findUnique({
     where: { id: projectId },
     select: {
       id: true,

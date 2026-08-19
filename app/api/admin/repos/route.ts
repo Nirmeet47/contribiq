@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 const reposQuerySchema = adminPaginationSchema.extend({
-  status: z.enum(["NOT_INDEXED", "PENDING", "INDEXED", "FAILED"]).optional(),
+  status: z.enum(["not_indexed", "pending", "indexed", "failed"]).optional(),
   q: z.string().trim().max(120).optional(),
 });
 
@@ -43,13 +43,13 @@ export async function GET(request: Request) {
     ...(status ? { indexingStatus: status } : {}),
   };
   const [count, allCount, failedCount, pendingCount, indexedCount, notIndexedCount, repos] = await Promise.all([
-    prisma.repo.count({ where }),
-    prisma.repo.count({ where: searchWhere }),
-    prisma.repo.count({ where: { ...searchWhere, indexingStatus: "FAILED" } }),
-    prisma.repo.count({ where: { ...searchWhere, indexingStatus: "PENDING" } }),
-    prisma.repo.count({ where: { ...searchWhere, indexingStatus: "INDEXED" } }),
-    prisma.repo.count({ where: { ...searchWhere, indexingStatus: "NOT_INDEXED" } }),
-    prisma.repo.findMany({
+    prisma.project.count({ where }),
+    prisma.project.count({ where: searchWhere }),
+    prisma.project.count({ where: { ...searchWhere, indexingStatus: "failed" } }),
+    prisma.project.count({ where: { ...searchWhere, indexingStatus: "pending" } }),
+    prisma.project.count({ where: { ...searchWhere, indexingStatus: "indexed" } }),
+    prisma.project.count({ where: { ...searchWhere, indexingStatus: "not_indexed" } }),
+    prisma.project.findMany({
       where,
       orderBy: [{ indexingStatus: "asc" }, { updatedAt: "desc" }],
       skip: (page - 1) * pageSize,
@@ -77,10 +77,10 @@ export async function GET(request: Request) {
   return NextResponse.json({
     counts: {
       ALL: allCount,
-      FAILED: failedCount,
-      PENDING: pendingCount,
-      INDEXED: indexedCount,
-      NOT_INDEXED: notIndexedCount,
+      failed: failedCount,
+      pending: pendingCount,
+      indexed: indexedCount,
+      not_indexed: notIndexedCount,
     },
     repos: repos.map((repo) => ({
       id: repo.id,
@@ -103,10 +103,10 @@ export async function POST() {
   const auth = await requireCurrentAdminUserId();
   if (auth.error) return auth.error;
 
-  const result = await prisma.repo.updateMany({
-    where: { indexingStatus: "NOT_INDEXED" },
+  const result = await prisma.project.updateMany({
+    where: { indexingStatus: "not_indexed" },
     data: {
-      indexingStatus: "PENDING",
+      indexingStatus: "pending",
       indexingError: null,
     },
   });

@@ -41,7 +41,7 @@ type FeedMatch = {
     githubUrl: string;
     requiredSkills: string[];
     bookmarks: Array<{ id: string }>;
-    repo: {
+    project: {
       id: string;
       owner: string;
       name: string;
@@ -179,8 +179,8 @@ async function validateStaleIssues<T extends FeedMatch>(matches: T[]) {
 
   await Promise.all(staleMatches.map(async (match) => {
     const latest = await fetchGitHubIssue(
-      match.issue.repo.owner,
-      match.issue.repo.name,
+      match.issue.project.owner,
+      match.issue.project.name,
       match.issue.githubUrl
     );
 
@@ -207,7 +207,7 @@ async function validateStaleIssues<T extends FeedMatch>(matches: T[]) {
       },
     });
 
-    await deleteIssueCaches(match.issue.id, match.issue.repo.id);
+    await deleteIssueCaches(match.issue.id, match.issue.project.id);
 
     if (latestState === "closed") {
       closedIssueIds.add(match.issue.id);
@@ -284,7 +284,7 @@ export async function GET(request: Request) {
         ...(issueType ? { issueType } : {}),
         ...(languages.length > 0
           ? {
-              repo: {
+              project: {
                 language: { in: languages, mode: "insensitive" as const },
               },
             }
@@ -318,7 +318,7 @@ export async function GET(request: Request) {
           issueType: true,
           githubUrl: true,
           requiredSkills: true,
-          repo: {
+          project: {
             select: {
               id: true,
               owner: true,
@@ -371,14 +371,14 @@ export async function GET(request: Request) {
         requiredSkills: match.issue.requiredSkills,
         bookmarked: match.issue.bookmarks.length > 0,
         repo: {
-          id: match.issue.repo.id,
-          owner: match.issue.repo.owner,
-          name: match.issue.repo.name,
-          fullName: match.issue.repo.fullName,
-          categories: match.issue.repo.categories,
-          maintainerScore: match.issue.repo.maintainerScore,
-          activityScore: match.issue.repo.activityScore,
-          language: match.issue.repo.language,
+          id: match.issue.project.id,
+          owner: match.issue.project.owner,
+          name: match.issue.project.name,
+          fullName: match.issue.project.fullName,
+          categories: match.issue.project.categories,
+          maintainerScore: match.issue.project.maintainerScore,
+          activityScore: match.issue.project.activityScore,
+          language: match.issue.project.language,
         },
       },
     })),

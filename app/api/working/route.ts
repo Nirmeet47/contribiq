@@ -16,7 +16,7 @@ type WorkingItem = {
     issueType: "bug" | "feature" | "docs" | "refactor" | null;
     githubUrl: string;
     requiredSkills: string[];
-    repo: {
+    project: {
       id: string;
       owner: string;
       name: string;
@@ -51,7 +51,7 @@ export async function GET() {
           issueType: true,
           githubUrl: true,
           requiredSkills: true,
-          repo: {
+          project: {
             select: {
               id: true,
               owner: true,
@@ -67,10 +67,13 @@ export async function GET() {
 
   return NextResponse.json({
     count: items.length,
-    items: (items as WorkingItem[]).map((item: WorkingItem) => ({
-      id: item.id,
-      createdAt: item.createdAt,
-      issue: item.issue,
-    })),
+    items: (items as WorkingItem[]).map((item: WorkingItem) => {
+      const { project, ...issueRest } = item.issue;
+      return {
+        id: item.id,
+        createdAt: item.createdAt,
+        issue: { ...issueRest, repo: project },
+      };
+    }),
   });
 }

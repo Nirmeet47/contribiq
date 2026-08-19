@@ -304,7 +304,7 @@ export async function GET(
     }
   }
 
-  const repo = await prisma.repo.findUnique({
+  const repo = await prisma.project.findUnique({
     where: { id: projectId },
     select: {
       id: true,
@@ -329,7 +329,7 @@ export async function GET(
     fetchGithubStats(repo.owner, repo.name),
     getKnowledgeStats(projectId),
     prisma.issue.findMany({
-      where: { repoId: projectId, state: "open", classified: true },
+      where: { projectId, state: "open", classified: true },
       orderBy: { updatedAt: "desc" },
       take: 10,
       select: {
@@ -344,7 +344,7 @@ export async function GET(
       },
     }),
     prisma.issue.findMany({
-      where: { repoId: projectId, state: "open" },
+      where: { projectId, state: "open" },
       select: { labels: true },
     }),
   ]);

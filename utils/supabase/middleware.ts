@@ -72,7 +72,7 @@ export async function updateSession(request: NextRequest) {
           select: { role: true },
         })
 
-    if (dbUser?.role !== 'ADMIN') {
+    if (dbUser?.role !== 'admin') {
       const url = request.nextUrl.clone()
       url.pathname = '/dashboard'
       return NextResponse.redirect(url)

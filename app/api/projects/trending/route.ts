@@ -161,7 +161,7 @@ export async function GET(request: Request) {
     })
   ) as Map<string, number>;
 
-  const repos: TrendingRepo[] = await prisma.repo.findMany({
+  const repos: TrendingRepo[] = await prisma.project.findMany({
     select: {
       id: true,
       owner: true,

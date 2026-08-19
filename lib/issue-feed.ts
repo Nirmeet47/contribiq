@@ -9,7 +9,7 @@ export const issueFeedSelect = {
   issueType: true,
   githubUrl: true,
   requiredSkills: true,
-  repo: {
+  project: {
     select: {
       id: true,
       owner: true,
@@ -35,7 +35,7 @@ export type IssueFeedRecord = {
   issueType: "bug" | "feature" | "docs" | "refactor" | null;
   githubUrl: string;
   requiredSkills: string[];
-  repo: {
+  project: {
     id: string;
     owner: string;
     name: string;
@@ -61,7 +61,7 @@ export function serializeIssueForFeed(issue: IssueFeedRecord, userId?: string | 
     bookmarked: userId
       ? issue.bookmarks?.some((bookmark) => bookmark.userId === userId) ?? false
       : false,
-    repo: issue.repo,
+    repo: issue.project,
   };
 }
 

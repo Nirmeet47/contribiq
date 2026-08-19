@@ -37,7 +37,7 @@ export async function GET() {
     strongUserMatchCount,
     queueStatus,
   ] = await Promise.all([
-    prisma.repo.count(),
+    prisma.project.count(),
     prisma.issue.count({ where: { state: "open" } }),
     prisma.issue.count({ where: { state: "open", classified: true } }),
     prisma.issueEmbedding.count(),

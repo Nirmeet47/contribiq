@@ -4,6 +4,12 @@ import { getLocalContributionHeatmap } from "@/lib/contribution-activity";
 import { decryptGithubToken, getAppGitHubToken } from "@/lib/github-token";
 import { prisma } from "@/lib/prisma";
 
+const PROFILE_CACHE_VERSION = "v4";
+
+export function getProfileCacheKey(username: string) {
+  return `profile:${username.toLowerCase()}:${PROFILE_CACHE_VERSION}`;
+}
+
 type GitHubProfile = {
   login?: string;
   name?: string | null;
@@ -354,7 +360,7 @@ function buildGitHubHeatmap(
 
 export const getPublicProfile = cache(
   async (username: string): Promise<PublicProfilePayload | null> => {
-    const cacheKey = `profile:${username.toLowerCase()}:v4`;
+    const cacheKey = getProfileCacheKey(username);
     const cached = await getCachedJson<PublicProfilePayload>(cacheKey, "profile");
     if (cached) return cached;
 
